@@ -3,6 +3,7 @@ import type {
   BackgroundEffects,
   BackgroundState,
   SavedBackground,
+  WatermarkSettings,
   CanvasSize,
   DeviceFrame,
   GridState,
@@ -34,6 +35,7 @@ import {
   type ShuffleMode,
 } from "../lib/background/looks";
 import { storeSavedBackgrounds } from "../lib/host";
+import { DEFAULT_WATERMARK, normaliseWatermark } from "../lib/watermark";
 import { migrateElement, nextNumber } from "../lib/marks";
 import { placeFrame } from "../lib/mockups";
 import { DEFAULT_MARK_STYLES, shapeDefaults } from "../lib/markTools";
@@ -133,7 +135,7 @@ interface EditorState {
   grid: GridState;
   /** Smart guides + snapping while dragging. A view aid, like `grid`. */
   snapEnabled: boolean;
-  watermark: boolean;
+  watermark: WatermarkSettings;
   isPro: boolean;
   /** Transient: true while a pattern slider is held. Not part of the project. */
   patternDragging: boolean;
@@ -179,7 +181,10 @@ interface EditorState {
   deleteSavedBackground: (id: string) => void;
   /** Fills the list from the saved file, at launch. */
   setSavedBackgrounds: (list: SavedBackground[]) => void;
-  setWatermark: (v: boolean) => void;
+  /** Changes Layer's badge. On the free plan only its place can change. */
+  setBadge: (patch: Partial<WatermarkSettings["badge"]>) => void;
+  /** Changes the user's own watermark. */
+  setOwnWatermark: (patch: Partial<WatermarkSettings["own"]>) => void;
   setMarkTool: (tool: MarkTool | null) => void;
   setMarkStyle: (category: MarkCategory, patch: Partial<ShapeElement>) => void;
   setEditingId: (id: string | null) => void;
@@ -243,7 +248,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   // On by default: this is the behaviour people expect from an editor, and it
   // is unobtrusive because guides only appear when something actually lines up.
   snapEnabled: true,
-  watermark: true,
+  watermark: DEFAULT_WATERMARK,
   isPro: false,
   patternDragging: false,
   lookTrails: {},
@@ -356,7 +361,17 @@ export const useEditor = create<EditorState>((set, get) => ({
 
   setSavedBackgrounds: (list) => set({ savedBackgrounds: list }),
 
-  setWatermark: (v) => set({ watermark: v }),
+  setBadge: (patch) => {
+    const { watermark, isPro } = get();
+    // The free plan's badge stays on, full size and full strength: it can only move.
+    const allowed = isPro ? patch : patch.place ? { place: patch.place } : {};
+    set({ watermark: { ...watermark, badge: { ...watermark.badge, ...allowed } } });
+  },
+
+  setOwnWatermark: (patch) => {
+    const { watermark } = get();
+    set({ watermark: { ...watermark, own: { ...watermark.own, ...patch } } });
+  },
 
   setMarkTool: (tool) =>
     set({ markTool: tool, selectedIds: [], editingId: null, cropId: null }),
@@ -720,7 +735,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       background: normaliseBackground(project.background, DEFAULT_BACKGROUND),
       lookTrails: {},
       elements: project.elements.map(migrateElement),
-      watermark: project.watermark,
+      watermark: normaliseWatermark(project.watermark),
       layout:
         project.layout && layoutOf(project.layout.id) && Array.isArray(project.layout.slots)
           ? project.layout

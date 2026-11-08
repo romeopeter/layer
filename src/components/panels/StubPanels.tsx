@@ -161,8 +161,9 @@ export const MotionPanel = () => (
 );
 
 export const CustomizePanel = ({ onOpenModal }: { onOpenModal: () => void }) => {
-  const watermark = useEditor((s) => s.watermark);
-  const setWatermark = useEditor((s) => s.setWatermark);
+  const showBadge = useEditor((s) => s.watermark.badge.show);
+  const setBadge = useEditor((s) => s.setBadge);
+  const isPro = useEditor((s) => s.isPro);
   return (
     <div className="flex flex-col gap-2.5 px-4 pb-6 pt-4">
       <PanelTitle>CUSTOMIZE</PanelTitle>
@@ -173,7 +174,13 @@ export const CustomizePanel = ({ onOpenModal }: { onOpenModal: () => void }) => 
       <SwitchRow label="DARK MODE" checked onCheckedChange={() => {}} />
       <SwitchRow label="SHOW DOTTED GRID" checked onCheckedChange={() => {}} />
       <SwitchRow label="REDUCE MOTION" onCheckedChange={() => {}} />
-      <SwitchRow label="SHOW WATERMARK" checked={watermark} onCheckedChange={setWatermark} />
+      {/* Free exports always carry the badge, so only Pro gets the switch. */}
+      <SwitchRow
+        label="SHOW WATERMARK"
+        description={isPro ? undefined : "Free exports always carry the Layer badge."}
+        checked={showBadge}
+        onCheckedChange={isPro ? (show) => setBadge({ show }) : undefined}
+      />
 
       <SectionLabel>HOTKEYS</SectionLabel>
       <div className="flex flex-col gap-1">

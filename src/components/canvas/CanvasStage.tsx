@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Stage, Layer, Transformer, Text as KText, Group as KGroup, Image as KImage, Rect as KRect } from "react-konva";
-import useImage from "use-image";
+import { Stage, Layer, Transformer } from "react-konva";
 import Konva from "konva";
 import { useEditor } from "../../store/editor";
 import { Background } from "./Background";
@@ -13,6 +12,7 @@ import { usePictureDrag } from "./usePictureDrag";
 import { SelectionToolbar } from "./SelectionToolbar";
 import { GRID_LAYER_NAME, GridOverlay } from "./GridOverlay";
 import { SnapGuides, type SnapGuidesHandle } from "./SnapGuides";
+import { Watermarks } from "./Watermarks";
 import { MarkDraft, type MarkDraftHandle } from "./MarkDraft";
 import { MARK_HANDLES_LAYER_NAME, MarkHandles } from "./MarkHandles";
 import { TextEditor } from "./TextEditor";
@@ -105,6 +105,7 @@ export const CanvasStage = () => {
   const grid = useEditor((s) => s.grid);
   const snapEnabled = useEditor((s) => s.snapEnabled);
   const watermark = useEditor((s) => s.watermark);
+  const isPro = useEditor((s) => s.isPro);
   const markTool = useEditor((s) => s.markTool);
   const editingId = useEditor((s) => s.editingId);
   const cropId = useEditor((s) => s.cropId);
@@ -172,8 +173,6 @@ export const CanvasStage = () => {
     return () => requestObserver.disconnect();
   }, [canvas.width, canvas.height, zoom]);
 
-  // Brand logo for the watermark lockup
-  const [logoImg] = useImage("/icons/logo.svg");
 
   // Attach transformer to selected nodes
   useEffect(() => {
@@ -607,33 +606,8 @@ export const CanvasStage = () => {
               anchorSize={9}
             />
 
-            {/* Watermark (Phase 1: composited in JS, always shown for non-Pro) */}
-            {watermark && (
-              <KGroup
-                x={canvas.width - 144}
-                y={canvas.height - 60}
-                listening={false}
-              >
-                <KRect
-                  x={0}
-                  y={0}
-                  width={120}
-                  height={36}
-                  cornerRadius={18}
-                  fill="rgba(15,14,26,0.6)"
-                />
-                <KImage image={logoImg} x={14} y={8} width={22} height={20} />
-                <KText
-                  x={44}
-                  y={6}
-                  text="Layer"
-                  fontSize={22}
-                  fontFamily="Bricolage Grotesque"
-                  fontStyle="bold"
-                  fill="#FFFFFF"
-                />
-              </KGroup>
-            )}
+            {/* Phase 1: composited in JS. Free exports always carry the badge; see §11. */}
+            <Watermarks settings={watermark} isPro={isPro} canvas={canvas} />
           </Layer>
 
           {/*

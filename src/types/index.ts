@@ -330,12 +330,48 @@ export interface CanvasLayout {
   slots: LayoutSlot[];
 }
 
+/** One of nine places on the canvas: the corners, the edges' middles, and the centre. */
+export type WatermarkPlace =
+  | "top-left"
+  | "top"
+  | "top-right"
+  | "left"
+  | "center"
+  | "right"
+  | "bottom-left"
+  | "bottom"
+  | "bottom-right";
+
+export interface WatermarkSettings {
+  /** Layer's badge. Free exports always carry it at full size: only its place can change. */
+  badge: {
+    show: boolean;
+    place: WatermarkPlace;
+    /** 1 is the usual size, which follows the canvas. */
+    size: number;
+    opacity: number;
+  };
+  /** The user's own watermark, on any plan, as well as the badge. */
+  own: {
+    kind: "none" | "text" | "logo";
+    text: string;
+    color: string;
+    logoSrc: string | null;
+    place: WatermarkPlace;
+    /** Repeated across the whole canvas, on a slant, instead of in one place. */
+    tiled: boolean;
+    size: number;
+    opacity: number;
+  };
+}
+
 export interface LayerProject {
   version: 1;
   canvas: { width: number; height: number };
   background: BackgroundState;
   elements: LayerElement[];
-  watermark: boolean;
+  /** A plain true or false in files from before watermark settings. */
+  watermark: WatermarkSettings | boolean;
   /** Absent in projects saved before layouts existed. */
   layout?: CanvasLayout | null;
 }

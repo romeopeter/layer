@@ -1,31 +1,6 @@
-import {
-  ArrowDown,
-  ArrowDownLeft,
-  ArrowDownRight,
-  ArrowLeft,
-  ArrowRight,
-  ArrowUp,
-  ArrowUpLeft,
-  ArrowUpRight,
-  CircleDot,
-} from "lucide-react";
 import { useEditor } from "@/store/editor";
-import { cn } from "@/lib/utils";
 import { PanelTitle, SectionLabel, LabeledSlider, PanelDesc } from "./primitives";
-import { choiceClass } from "./choice";
-
-/** The nine places, left to right and top to bottom, each pointing where it sends the layer. */
-const PLACES = [
-  { label: "Top left", icon: ArrowUpLeft },
-  { label: "Top", icon: ArrowUp },
-  { label: "Top right", icon: ArrowUpRight },
-  { label: "Left", icon: ArrowLeft },
-  { label: "Center", icon: CircleDot },
-  { label: "Right", icon: ArrowRight },
-  { label: "Bottom left", icon: ArrowDownLeft },
-  { label: "Bottom", icon: ArrowDown },
-  { label: "Bottom right", icon: ArrowDownRight },
-];
+import { PlaceGrid } from "./PlaceGrid";
 
 /* ---------------------------------------------------------------------------------------------- */
 
@@ -75,30 +50,10 @@ export const PositionPanel = () => {
       <PanelTitle>POSITION</PanelTitle>
       <PanelDesc>Move the selected layer to an edge, a corner or the center, or set X and Y.</PanelDesc>
 
-      <div className="grid w-full grid-cols-3 gap-1.5">
-        {PLACES.map(({ label, icon: Icon }, i) => {
-          const h = i % 3;
-          const v = Math.floor(i / 3);
-          const here = isAt(h, v);
-          return (
-            <button
-              key={label}
-              type="button"
-              title={label}
-              aria-label={label}
-              aria-pressed={here}
-              onClick={() => update(el.id, placeOf(h, v))}
-              className={cn(
-                "flex h-11 cursor-pointer items-center justify-center rounded-md border bg-chrome/50 transition-colors hover:text-text",
-                choiceClass(here),
-                here ? "text-text" : "text-text-muted",
-              )}
-            >
-              <Icon className="h-4 w-4" />
-            </button>
-          );
-        })}
-      </div>
+      <PlaceGrid
+        chosen={[0, 1, 2, 3, 4, 5, 6, 7, 8].find((i) => isAt(i % 3, Math.floor(i / 3))) ?? null}
+        onPick={(i) => update(el.id, placeOf(i % 3, Math.floor(i / 3)))}
+      />
 
       <SectionLabel>POSITION</SectionLabel>
       <div className="grid grid-cols-2 gap-2">

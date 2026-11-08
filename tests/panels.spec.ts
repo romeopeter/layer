@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { addTwoToneImage, openApp } from "./helpers";
+import { addTwoToneImage, openApp, solidPng } from "./helpers";
 
 test.describe("Position", () => {
   test("arrows send the layer to each place, and show where it is", async ({ page }) => {
@@ -77,5 +77,103 @@ test.describe("Corner", () => {
     await page.getByRole("button", { name: "No border" }).click();
     expect((await el()).border).toMatchObject({ enabled: false, width: 0 });
     expect(errors).toEqual([]);
+  });
+});
+
+test.describe("Watermark", () => {
+  const badgeBox = (page: import("@playwright/test").Page) =>
+    page.evaluate<{ x: number; y: number; width: number; height: number; visible: boolean } | null>(`(() => {
+      const node = ST().findOne(".layer-badge");
+      if (!node) return null;
+      const box = node.getClientRect({ relativeTo: node.getLayer() });
+      return { ...box, visible: node.isVisible() };
+    })()`);
+
+  test("free exports keep the badge: it can move, nothing else", async ({ page }) => {
+    const errors = await openApp(page, "Watermark");
+    const canvas: { width: number; height: number } = await page.evaluate(`S.getState().canvas`);
+    let box = await badgeBox(page);
+    expect(box?.x).toBeGreaterThan(canvas.width / 2);
+    expect(box?.y).toBeGreaterThan(canvas.height / 2);
+
+    await page.getByRole("button", { name: "Badge: Top left" }).click();
+    box = await badgeBox(page);
+    expect(box?.x).toBeLessThan(canvas.width / 4);
+    expect(box?.y).toBeLessThan(canvas.height / 4);
+    await expect(page.getByRole("button", { name: "Badge: Top left" })).toHaveAttribute("aria-pressed", "true");
+
+    // No switch or size here, and the store refuses them too, even from a file.
+    await expect(page.getByText("SHOW BADGE")).toHaveCount(0);
+    await page.evaluate(`S.getState().setBadge({ show: false, size: 0.5, opacity: 0.1 })`);
+    expect(await page.evaluate(`S.getState().watermark.badge`)).toMatchObject({ show: true, size: 1, opacity: 1 });
+    await page.evaluate(`(() => {
+      const s = S.getState();
+      const project = JSON.parse(JSON.stringify(s.toProject()));
+      project.watermark.badge.show = false;
+      s.loadProject(project);
+    })()`);
+    expect((await badgeBox(page))?.visible).toBe(true);
+    expect(errors).toEqual([]);
+  });
+
+  test("Pro can hide and resize the badge", async ({ page }) => {
+    await openApp(page);
+    await page.evaluate(`S.setState({ isPro: true })`);
+    await page.getByRole("button", { name: "Watermark", exact: true }).click();
+    const before = await badgeBox(page);
+    await page.evaluate(`S.getState().setBadge({ size: 2 })`);
+    expect((await badgeBox(page))?.height).toBeCloseTo((before?.height ?? 0) * 2, 0);
+    await page.getByText("SHOW BADGE").click();
+    expect(await badgeBox(page)).toBeNull();
+  });
+
+  test("your own text goes on, out of the badge's way, and into the export", async ({ page }) => {
+    const errors = await openApp(page, "Watermark");
+    await page.getByRole("radio", { name: "Text", exact: true }).click();
+    await page.getByRole("textbox", { name: "Watermark text" }).fill("@romeo");
+    await page.getByRole("button", { name: "Watermark: Bottom right" }).click();
+
+    const boxes: { own: { y: number; height: number }; badge: { y: number } } = await page.evaluate(`(() => {
+      const own = ST().findOne(".own-watermark");
+      const badge = ST().findOne(".layer-badge");
+      return { own: own.getClientRect({ relativeTo: own.getLayer() }), badge: badge.getClientRect({ relativeTo: badge.getLayer() }) };
+    })()`);
+    // Stacked above the badge rather than over it.
+    expect(boxes.own.y + boxes.own.height).toBeLessThanOrEqual(boxes.badge.y);
+
+    // The export changes with the text on and off: it's artwork, not editor chrome.
+    const exported: boolean = await page.evaluate(`(async () => {
+      const withText = await X.renderCanvasDataURL("png", 1);
+      S.getState().setOwnWatermark({ kind: "none" });
+      await new Promise((r) => setTimeout(r, 100));
+      const without = await X.renderCanvasDataURL("png", 1);
+      return withText !== without;
+    })()`);
+    expect(exported).toBe(true);
+    expect(errors).toEqual([]);
+  });
+
+  test("a logo, repeated across the canvas", async ({ page }) => {
+    const errors = await openApp(page, "Watermark");
+    await page.getByRole("radio", { name: "Logo", exact: true }).click();
+    await page.getByLabel("Upload a logo for the watermark").setInputFiles(solidPng());
+    await expect(page.getByRole("img", { name: "Your logo" })).toBeVisible();
+    await expect.poll(() => page.evaluate(`ST().findOne(".own-watermark")?.find("Image").length ?? 0`)).toBe(1);
+
+    await page.getByText("REPEAT").click();
+    await expect.poll(() => page.evaluate(`ST().findOne(".own-watermark").find("Image").length`)).toBeGreaterThan(10);
+    expect(errors).toEqual([]);
+  });
+
+  test("files from before watermark settings still open", async ({ page }) => {
+    await openApp(page);
+    const settings = await page.evaluate(`(() => {
+      const s = S.getState();
+      const project = JSON.parse(JSON.stringify(s.toProject()));
+      project.watermark = true;
+      s.loadProject(project);
+      return S.getState().watermark;
+    })()`);
+    expect(settings).toMatchObject({ badge: { show: true, place: "bottom-right" }, own: { kind: "none" } });
   });
 });
