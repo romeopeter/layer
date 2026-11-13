@@ -89,7 +89,7 @@ test.describe("Watermark", () => {
       return { ...box, visible: node.isVisible() };
     })()`);
 
-  test("free exports keep the badge: it can move, nothing else", async ({ page }) => {
+  test("the badge is on by default, and can be moved", async ({ page }) => {
     const errors = await openApp(page, "Watermark");
     const canvas: { width: number; height: number } = await page.evaluate(`S.getState().canvas`);
     let box = await badgeBox(page);
@@ -101,29 +101,26 @@ test.describe("Watermark", () => {
     expect(box?.x).toBeLessThan(canvas.width / 4);
     expect(box?.y).toBeLessThan(canvas.height / 4);
     await expect(page.getByRole("button", { name: "Badge: Top left" })).toHaveAttribute("aria-pressed", "true");
-
-    // No switch or size here, and the store refuses them too, even from a file.
-    await expect(page.getByText("SHOW BADGE")).toHaveCount(0);
-    await page.evaluate(`S.getState().setBadge({ show: false, size: 0.5, opacity: 0.1 })`);
-    expect(await page.evaluate(`S.getState().watermark.badge`)).toMatchObject({ show: true, size: 1, opacity: 1 });
-    await page.evaluate(`(() => {
-      const s = S.getState();
-      const project = JSON.parse(JSON.stringify(s.toProject()));
-      project.watermark.badge.show = false;
-      s.loadProject(project);
-    })()`);
-    expect((await badgeBox(page))?.visible).toBe(true);
     expect(errors).toEqual([]);
   });
 
-  test("Pro can hide and resize the badge", async ({ page }) => {
-    await openApp(page);
-    await page.evaluate(`S.setState({ isPro: true })`);
-    await page.getByRole("button", { name: "Watermark", exact: true }).click();
+  test("the badge can be resized and hidden, with no plan needed", async ({ page }) => {
+    await openApp(page, "Watermark");
+    await expect(page.getByText(/\bPRO\b/)).toHaveCount(0);
     const before = await badgeBox(page);
     await page.evaluate(`S.getState().setBadge({ size: 2 })`);
     expect((await badgeBox(page))?.height).toBeCloseTo((before?.height ?? 0) * 2, 0);
     await page.getByText("SHOW BADGE").click();
+    expect(await badgeBox(page)).toBeNull();
+
+    // A file that says it's off opens with it off.
+    await page.evaluate(`(() => {
+      const s = S.getState();
+      s.setBadge({ show: true });
+      const project = JSON.parse(JSON.stringify(s.toProject()));
+      project.watermark.badge.show = false;
+      s.loadProject(project);
+    })()`);
     expect(await badgeBox(page)).toBeNull();
   });
 
@@ -175,5 +172,37 @@ test.describe("Watermark", () => {
       return S.getState().watermark;
     })()`);
     expect(settings).toMatchObject({ badge: { show: true, place: "bottom-right" }, own: { kind: "none" } });
+  });
+});
+
+test.describe("Export menu", () => {
+  const openMenu = async (page: import("@playwright/test").Page) => {
+    await page.getByRole("button", { name: "Export", exact: true }).click();
+    await expect(page.getByText("EXPORT OPTIONS")).toBeVisible();
+  };
+
+  test("has no Pro locks, and Remove watermark hides the badge", async ({ page }) => {
+    await openApp(page);
+    await openMenu(page);
+    await expect(page.getByText(/\bPRO\b/)).toHaveCount(0);
+    await page.getByLabel("Remove watermark").check();
+    expect(await page.evaluate(`S.getState().watermark.badge.show`)).toBe(false);
+  });
+
+  test("Remove background makes a see-through PNG, and leaves the canvas alone", async ({ page }) => {
+    await openApp(page);
+    const corner: { alpha: number; layerVisible: boolean } = await page.evaluate(`(async () => {
+      const url = await X.renderCanvasDataURL("png", 1, { withoutBackground: true });
+      const image = new Image(); image.src = url; await image.decode();
+      const c = document.createElement("canvas"); c.width = image.width; c.height = image.height;
+      const g = c.getContext("2d"); g.drawImage(image, 0, 0);
+      return { alpha: g.getImageData(10, 10, 1, 1).data[3], layerVisible: ST().findOne(".background").isVisible() };
+    })()`);
+    expect(corner).toEqual({ alpha: 0, layerVisible: true });
+
+    await openMenu(page);
+    await page.getByLabel("Remove background").check();
+    await expect(page.getByRole("button", { name: "Download JPG" })).toBeDisabled();
+    await expect(page.getByText("PNG and WebP keep it see-through. JPG can't.")).toBeVisible();
   });
 });

@@ -90,11 +90,11 @@ export const ImagesPanel = () => (
     <SectionLabel>MORE INTEGRATIONS</SectionLabel>
     <div className="flex flex-col gap-1.5">
       {[
-        { Icon: Twitter, label: "Import Tweet", pro: true },
-        { Icon: ImageIcon, label: "Screenshot Website", pro: true },
-        { Icon: Figma, label: "Install Figma Plugin", pro: false },
-        { Icon: Chrome, label: "Install Chrome Extension", pro: false },
-      ].map(({ Icon, label, pro }) => (
+        { Icon: Twitter, label: "Import Tweet" },
+        { Icon: ImageIcon, label: "Screenshot Website" },
+        { Icon: Figma, label: "Install Figma Plugin" },
+        { Icon: Chrome, label: "Install Chrome Extension" },
+      ].map(({ Icon, label }) => (
         <button
           key={label}
           type="button"
@@ -105,7 +105,7 @@ export const ImagesPanel = () => (
             <Icon className="h-3.5 w-3.5" />
           </span>
           <span className="flex-1">{label}</span>
-          {pro && <Badge variant="pro" size="sm" />}
+          <Badge variant="phase2" size="sm">SOON</Badge>
         </button>
       ))}
     </div>
@@ -114,16 +114,8 @@ export const ImagesPanel = () => (
 
 export const BrandsPanel = () => (
   <div className="flex flex-col gap-2.5 px-4 pb-6 pt-4">
-    <PanelTitle badge={<Badge variant="pro" />}>BRANDS</PanelTitle>
+    <PanelTitle badge={<Phase2Tag />}>BRANDS</PanelTitle>
     <PanelDesc>Save brand colors, logos, fonts as one-click presets in Phase 2.</PanelDesc>
-    <div className="pro-lock flex flex-col items-center gap-2.5 rounded-xl p-4 text-center">
-      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-a-200/[0.12] text-a-200">
-        <Lock className="h-5 w-5" />
-      </div>
-      <Button variant="primary" size="block" disabled>
-        <Lock className="h-3 w-3" /> Unlock Brands
-      </Button>
-    </div>
     <SectionLabel>SAMPLE BRANDS</SectionLabel>
     <div className="flex flex-col gap-1.5 opacity-55">
       {["Acme Co.", "Vela", "Northpeak"].map((n, i) => (
@@ -163,7 +155,6 @@ export const MotionPanel = () => (
 export const CustomizePanel = ({ onOpenModal }: { onOpenModal: () => void }) => {
   const showBadge = useEditor((s) => s.watermark.badge.show);
   const setBadge = useEditor((s) => s.setBadge);
-  const isPro = useEditor((s) => s.isPro);
   return (
     <div className="flex flex-col gap-2.5 px-4 pb-6 pt-4">
       <PanelTitle>CUSTOMIZE</PanelTitle>
@@ -174,13 +165,7 @@ export const CustomizePanel = ({ onOpenModal }: { onOpenModal: () => void }) => 
       <SwitchRow label="DARK MODE" checked onCheckedChange={() => {}} />
       <SwitchRow label="SHOW DOTTED GRID" checked onCheckedChange={() => {}} />
       <SwitchRow label="REDUCE MOTION" onCheckedChange={() => {}} />
-      {/* Free exports always carry the badge, so only Pro gets the switch. */}
-      <SwitchRow
-        label="SHOW WATERMARK"
-        description={isPro ? undefined : "Free exports always carry the Layer badge."}
-        checked={showBadge}
-        onCheckedChange={isPro ? (show) => setBadge({ show }) : undefined}
-      />
+      <SwitchRow label="SHOW WATERMARK" checked={showBadge} onCheckedChange={(show) => setBadge({ show })} />
 
       <SectionLabel>HOTKEYS</SectionLabel>
       <div className="flex flex-col gap-1">

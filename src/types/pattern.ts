@@ -91,31 +91,6 @@ const RETIRED_TYPES: Record<string, PatternType> = {
   quarters: "truchet",
 };
 
-export const PATTERN_PRO_GATE: Record<PatternType, boolean> = {
-  stripes: false,
-  grid: false,
-  plaid: false,
-  chevron: false,
-  waves: false,
-  dots: false,
-  triangles: false,
-  checks: false,
-  argyle: false,
-  hexagon: false,
-  cubes: false,
-  scales: false,
-  arcs: false,
-  basketweave: false,
-  truchet: false,
-  ribbons: false,
-  steps: false,
-  pinwheel: false,
-  circuit: false,
-  "starry-night": false,
-  raindrops: false,
-  terrazzo: false,
-};
-
 /**
  * Types where the rotation control is disabled in the panel.
  *

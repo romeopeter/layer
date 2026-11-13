@@ -1,5 +1,5 @@
 import Konva from "konva";
-import { getStage } from "../components/canvas/stageRef";
+import { BACKGROUND_LAYER_NAME, getStage } from "../components/canvas/stageRef";
 import { useEditor } from "../store/editor";
 import { saveExport, saveProject } from "./host";
 import { openLayerFile } from "./importers";
@@ -30,9 +30,11 @@ const dataURLtoBlob = (dataUrl: string): Blob => {
  */
 const withOverlaysHidden = async <T,>(
   stage: Konva.Stage,
+  options: { withoutBackground?: boolean },
   fn: () => Promise<T>,
 ) => {
   const overlays = [
+    ...(options.withoutBackground ? stage.find(`.${BACKGROUND_LAYER_NAME}`) : []),
     ...stage.find("Transformer"),
     ...stage.find(`.${GRID_LAYER_NAME}`),
     ...stage.find(`.${SNAP_GUIDES_LAYER_NAME}`),
@@ -52,15 +54,20 @@ const withOverlaysHidden = async <T,>(
   }
 };
 
+export interface ExportOptions {
+  /** Leaves the background out, so PNG and WebP come out see-through. */
+  withoutBackground?: boolean;
+}
 
 export const renderCanvasDataURL = (
   format: "png" | "jpg" | "webp" = "png",
-  pixelRatio = 2
+  pixelRatio = 2,
+  options: ExportOptions = {},
 ): Promise<string | null> => {
   const stage = getStage();
   if (!stage) return Promise.resolve(null);
 
-  return withOverlaysHidden(stage, async () => {
+  return withOverlaysHidden(stage, options, async () => {
     // The stage is scaled to fit, and the pixelRatio below compensates for that,
     // so the background pattern is rasterized at `pixelRatio` device pixels per
     // canvas unit regardless of the current zoom.
@@ -92,17 +99,18 @@ export const renderCanvasDataURL = (
 
 export const exportCanvas = async (
   format: "png" | "jpg" | "webp" = "png",
-  pixelRatio = 2
+  pixelRatio = 2,
+  options: ExportOptions = {},
 ) => {
-  const dataUrl = await renderCanvasDataURL(format, pixelRatio);
+  const dataUrl = await renderCanvasDataURL(format, pixelRatio, options);
   if (!dataUrl) return;
   const ext = format === "jpg" ? "jpg" : format;
   const blob = dataURLtoBlob(dataUrl);
   await saveExport(blob, `layer-design-${Date.now()}.${ext}`);
 };
 
-export const copyCanvasToClipboard = async () => {
-  const png = renderCanvasDataURL("png", 2).then((dataUrl) => {
+export const copyCanvasToClipboard = async (options: ExportOptions = {}) => {
+  const png = renderCanvasDataURL("png", 2, options).then((dataUrl) => {
     if (!dataUrl) throw new Error("There's no canvas to copy.");
     return dataURLtoBlob(dataUrl);
   });

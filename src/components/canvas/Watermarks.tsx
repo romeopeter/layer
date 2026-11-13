@@ -3,7 +3,6 @@ import { Group, Image as KImage, Rect, Text } from "react-konva";
 import useImage from "use-image";
 import type { WatermarkSettings } from "@/types";
 import {
-  badgeAsDrawn,
   badgeHeightOf,
   marginOf,
   placeBox,
@@ -17,7 +16,6 @@ const TEXT_FONT = "Bricolage Grotesque";
 
 interface Props {
   settings: WatermarkSettings;
-  isPro: boolean;
   canvas: { width: number; height: number };
 }
 
@@ -31,14 +29,14 @@ const measure = (text: string, fontSize: number) => {
 
 /**
  * Layer's badge and the user's own watermark, over everything. They're artwork:
- * export draws them like any element, which is why free exports carry the badge.
+ * export draws them like any element, so what shows is what exports.
  */
-export const Watermarks = ({ settings, isPro, canvas }: Props) => {
+export const Watermarks = ({ settings, canvas }: Props) => {
   const [logo] = useImage("/icons/logo.svg");
   const own = settings.own;
   const [ownLogo] = useImage(own.kind === "logo" && own.logoSrc ? own.logoSrc : "", "anonymous");
 
-  const badge = badgeAsDrawn(settings, isPro);
+  const badge = settings.badge;
   const margin = marginOf(canvas);
   const shorter = Math.min(canvas.width, canvas.height);
   const badgeHeight = badgeHeightOf(canvas, badge.size);

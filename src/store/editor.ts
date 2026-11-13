@@ -136,7 +136,6 @@ interface EditorState {
   /** Smart guides + snapping while dragging. A view aid, like `grid`. */
   snapEnabled: boolean;
   watermark: WatermarkSettings;
-  isPro: boolean;
   /** Transient: true while a pattern slider is held. Not part of the project. */
   patternDragging: boolean;
   /**
@@ -181,7 +180,7 @@ interface EditorState {
   deleteSavedBackground: (id: string) => void;
   /** Fills the list from the saved file, at launch. */
   setSavedBackgrounds: (list: SavedBackground[]) => void;
-  /** Changes Layer's badge. On the free plan only its place can change. */
+  /** Changes Layer's badge. */
   setBadge: (patch: Partial<WatermarkSettings["badge"]>) => void;
   /** Changes the user's own watermark. */
   setOwnWatermark: (patch: Partial<WatermarkSettings["own"]>) => void;
@@ -249,7 +248,6 @@ export const useEditor = create<EditorState>((set, get) => ({
   // is unobtrusive because guides only appear when something actually lines up.
   snapEnabled: true,
   watermark: DEFAULT_WATERMARK,
-  isPro: false,
   patternDragging: false,
   lookTrails: {},
   savedBackgrounds: [],
@@ -362,10 +360,8 @@ export const useEditor = create<EditorState>((set, get) => ({
   setSavedBackgrounds: (list) => set({ savedBackgrounds: list }),
 
   setBadge: (patch) => {
-    const { watermark, isPro } = get();
-    // The free plan's badge stays on, full size and full strength: it can only move.
-    const allowed = isPro ? patch : patch.place ? { place: patch.place } : {};
-    set({ watermark: { ...watermark, badge: { ...watermark.badge, ...allowed } } });
+    const { watermark } = get();
+    set({ watermark: { ...watermark, badge: { ...watermark.badge, ...patch } } });
   },
 
   setOwnWatermark: (patch) => {

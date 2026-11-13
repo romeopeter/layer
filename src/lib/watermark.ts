@@ -30,13 +30,6 @@ export const DEFAULT_WATERMARK: WatermarkSettings = {
 export const WATERMARK_SIZE = { min: 0.5, max: 3 };
 export const WATERMARK_OPACITY_MIN = 0.05;
 
-/**
- * The badge as it's drawn. Free exports always carry it at full size and
- * strength, whatever a file or the store says; only its place can change.
- */
-export const badgeAsDrawn = (settings: WatermarkSettings, isPro: boolean) =>
-  isPro ? settings.badge : { ...settings.badge, show: true, size: 1, opacity: 1 };
-
 /** The badge's height, in canvas units: a share of the shorter side, never too small to read. */
 export const badgeHeightOf = (canvas: { width: number; height: number }, size: number) =>
   Math.max(20, Math.min(canvas.width, canvas.height) * 0.027) * size;

@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { Lock, Stamp, Upload, X } from "lucide-react";
+import { Stamp, Upload, X } from "lucide-react";
 import { useEditor } from "@/store/editor";
 import type { WatermarkSettings } from "@/types";
 import { Button } from "@/components/ui/button";
@@ -26,7 +26,6 @@ const percent = (share: number) => Math.round(share * 100);
 /** Layer's badge, and the user's own text or logo watermark. */
 export const WatermarkPanel = () => {
   const watermark = useEditor((s) => s.watermark);
-  const isPro = useEditor((s) => s.isPro);
   const setBadge = useEditor((s) => s.setBadge);
   const setOwn = useEditor((s) => s.setOwnWatermark);
   const uploads = useEditor((s) => s.uploadedImages);
@@ -50,12 +49,8 @@ export const WatermarkPanel = () => {
 
       <div className="space-y-2.5">
         <SectionLabel>LAYER BADGE</SectionLabel>
-        {isPro ? (
-          <SwitchRow label="SHOW BADGE" checked={badge.show} onCheckedChange={(show) => setBadge({ show })} />
-        ) : (
-          <PanelHelp>Free exports always carry the Layer badge. You can move it anywhere.</PanelHelp>
-        )}
-        {(badge.show || !isPro) && (
+        <SwitchRow label="SHOW BADGE" checked={badge.show} onCheckedChange={(show) => setBadge({ show })} />
+        {badge.show && (
           <>
             <PlaceGrid
               compact
@@ -63,31 +58,22 @@ export const WatermarkPanel = () => {
               chosen={WATERMARK_PLACES.indexOf(badge.place)}
               onPick={(i) => setBadge({ place: WATERMARK_PLACES[i] })}
             />
-            {isPro && (
-              <>
-                <LabeledSlider
-                  label="SIZE"
-                  unit="%"
-                  min={percent(WATERMARK_SIZE.min)}
-                  max={percent(WATERMARK_SIZE.max)}
-                  value={percent(badge.size)}
-                  onChange={(v) => setBadge({ size: v / 100 })}
-                />
-                <LabeledSlider
-                  label="OPACITY"
-                  unit="%"
-                  min={percent(WATERMARK_OPACITY_MIN)}
-                  value={percent(badge.opacity)}
-                  onChange={(v) => setBadge({ opacity: v / 100 })}
-                />
-              </>
-            )}
+            <LabeledSlider
+              label="SIZE"
+              unit="%"
+              min={percent(WATERMARK_SIZE.min)}
+              max={percent(WATERMARK_SIZE.max)}
+              value={percent(badge.size)}
+              onChange={(v) => setBadge({ size: v / 100 })}
+            />
+            <LabeledSlider
+              label="OPACITY"
+              unit="%"
+              min={percent(WATERMARK_OPACITY_MIN)}
+              value={percent(badge.opacity)}
+              onChange={(v) => setBadge({ opacity: v / 100 })}
+            />
           </>
-        )}
-        {!isPro && (
-          <Button variant="ghost" size="block" disabled title="Pro is coming soon">
-            <Lock className="h-3 w-3" /> Hide or resize the badge (PRO)
-          </Button>
         )}
       </div>
 

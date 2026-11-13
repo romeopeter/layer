@@ -343,7 +343,7 @@ export type WatermarkPlace =
   | "bottom-right";
 
 export interface WatermarkSettings {
-  /** Layer's badge. Free exports always carry it at full size: only its place can change. */
+  /** Layer's badge. On by default; it can be moved, resized, faded or hidden. */
   badge: {
     show: boolean;
     place: WatermarkPlace;

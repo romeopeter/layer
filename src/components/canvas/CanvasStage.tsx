@@ -13,6 +13,7 @@ import { SelectionToolbar } from "./SelectionToolbar";
 import { GRID_LAYER_NAME, GridOverlay } from "./GridOverlay";
 import { SnapGuides, type SnapGuidesHandle } from "./SnapGuides";
 import { Watermarks } from "./Watermarks";
+import { BACKGROUND_LAYER_NAME } from "./stageRef";
 import { MarkDraft, type MarkDraftHandle } from "./MarkDraft";
 import { MARK_HANDLES_LAYER_NAME, MarkHandles } from "./MarkHandles";
 import { TextEditor } from "./TextEditor";
@@ -105,7 +106,6 @@ export const CanvasStage = () => {
   const grid = useEditor((s) => s.grid);
   const snapEnabled = useEditor((s) => s.snapEnabled);
   const watermark = useEditor((s) => s.watermark);
-  const isPro = useEditor((s) => s.isPro);
   const markTool = useEditor((s) => s.markTool);
   const editingId = useEditor((s) => s.editingId);
   const cropId = useEditor((s) => s.cropId);
@@ -520,8 +520,8 @@ export const CanvasStage = () => {
           onPointerDown={placement.onPointerDown}
           onPointerMove={placement.onPointerMove}
         >
-          {/* Background layer - non-interactive */}
-          <Layer listening={false}>
+          {/* Background layer - non-interactive. Named so export can leave it out. */}
+          <Layer name={BACKGROUND_LAYER_NAME} listening={false}>
             <Background
               bg={background}
               width={canvas.width}
@@ -606,8 +606,7 @@ export const CanvasStage = () => {
               anchorSize={9}
             />
 
-            {/* Phase 1: composited in JS. Free exports always carry the badge; see §11. */}
-            <Watermarks settings={watermark} isPro={isPro} canvas={canvas} />
+            <Watermarks settings={watermark} canvas={canvas} />
           </Layer>
 
           {/*

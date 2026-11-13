@@ -1,12 +1,8 @@
 import { useMemo, useState } from "react";
-import { Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useEditor } from "@/store/editor";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
   PATTERN_LABELS,
-  PATTERN_PRO_GATE,
   PATTERN_TYPES,
   ROTATION_DISABLED_TYPES,
   type PatternType,
@@ -29,18 +25,16 @@ const THUMB_TILE_PX = 26;
 const PatternTypeTile = ({
   type,
   selected,
-  locked,
   onSelect,
 }: {
   type: PatternType;
   selected: boolean;
-  locked: boolean;
   onSelect: () => void;
 }) => (
   <button
     type="button"
     title={PATTERN_LABELS[type]}
-    aria-label={locked ? `${PATTERN_LABELS[type]} (Pro)` : PATTERN_LABELS[type]}
+    aria-label={PATTERN_LABELS[type]}
     aria-pressed={selected}
     onClick={onSelect}
     className={cn(
@@ -53,13 +47,7 @@ const PatternTypeTile = ({
       // Honour the tile's own aspect so the non-square cube lattice isn't squashed.
       backgroundSize: `${THUMB_TILE_PX}px ${THUMB_TILE_PX * PATTERN_TILE_ASPECT[type]}px`,
     }}
-  >
-    {locked && (
-      <span className="absolute right-1 top-1">
-        <Badge variant="pro" size="sm" />
-      </span>
-    )}
-  </button>
+  />
 );
 
 export const PatternPanel = () => {
@@ -69,23 +57,13 @@ export const PatternPanel = () => {
   const customPairs = useEditor((s) => s.customPatternPairs);
   const addCustomPatternPair = useEditor((s) => s.addCustomPatternPair);
   const deleteCustomPatternPair = useEditor((s) => s.deleteCustomPatternPair);
-  const isPro = useEditor((s) => s.isPro);
 
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [lockedAttempt, setLockedAttempt] = useState<PatternType | null>(null);
 
   const brandPairs = useMemo(() => deriveBrandPatternPairs(), []);
   const rotationDisabled = ROTATION_DISABLED_TYPES.includes(pattern.type);
 
-  const onSelectType = (type: PatternType) => {
-    if (PATTERN_PRO_GATE[type] && !isPro) {
-      // Route to the upgrade path rather than silently applying the pattern.
-      setLockedAttempt(type);
-      return;
-    }
-    setLockedAttempt(null);
-    setPattern({ type });
-  };
+  const onSelectType = (type: PatternType) => setPattern({ type });
 
   // A swatch replaces any colours Shuffle chose.
   const selectPair = (colorPairId: string) => setPattern({ colorPairId, colors: undefined });
@@ -133,24 +111,12 @@ export const PatternPanel = () => {
               key={type}
               type={type}
               selected={pattern.type === type}
-              locked={PATTERN_PRO_GATE[type] && !isPro}
               onSelect={() => onSelectType(type)}
             />
           ))}
         </div>
       </div>
 
-      {lockedAttempt && (
-        <>
-          {/* Nothing is gated today; this renders only if PATTERN_PRO_GATE is
-              flipped back on for a type. Kept free of a hardcoded list of free
-              types so it can't go stale when that happens. */}
-          <PanelHelp>{PATTERN_LABELS[lockedAttempt]} is a Pro pattern.</PanelHelp>
-          <Button variant="ghost" size="block" className="cursor-pointer">
-            <Lock className="h-3 w-3" /> Unlock Pro patterns
-          </Button>
-        </>
-      )}
 
       <ShuffleRow mode="pattern" />
 

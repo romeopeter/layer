@@ -205,16 +205,6 @@
       0 0 80px color-mix(in srgb, #afa9ec 6%, transparent);
   }
 
-  /* PRO lock gradient */
-  .pro-lock {
-    background: linear-gradient(
-      180deg,
-      color-mix(in srgb, #ef9f27 6%, transparent),
-      color-mix(in srgb, #ef9f27 2%, transparent)
-    );
-    border: 1px solid color-mix(in srgb, #ef9f27 18%, transparent);
-  }
-
   /* Watermark composite on canvas */
   .art-watermark-pill {
     background: rgba(15, 14, 26, 0.3);

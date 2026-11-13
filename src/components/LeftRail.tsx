@@ -13,7 +13,6 @@ interface Props {
 export const LeftRail = ({ hiddenTools }: Props) => {
   const activeTool = useEditor((s) => s.activeTool);
   const setActiveTool = useEditor((s) => s.setActiveTool);
-  const isPro = useEditor((s) => s.isPro);
   const visible = TOOLS.filter((t) => !hiddenTools[t.key]);
 
   return (
@@ -40,9 +39,6 @@ export const LeftRail = ({ hiddenTools }: Props) => {
 
               <span className="leading-[1.1]">{tool.label}</span>
 
-              {tool.pro && !isPro && (
-                <span className="absolute right-2 top-1.5 h-1.25 w-1.25 rounded-full bg-a-200" />
-              )}
 
               {tool.exclusive && (
                 <span className="absolute right-2 top-1.5 h-1.25 w-1.25 rounded-full bg-t-400 shadow-[0_0_0_2px_color-mix(in_srgb,#1D9E75_20%,transparent)]" />
