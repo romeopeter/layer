@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { dragBy, element, elementCount, handle, openApp, solidPng, toScreen } from "./helpers";
+import { dragBy, element, elementCount, handle, openApp, openSection, solidPng, toScreen } from "./helpers";
 
 interface Img {
   id: string;
@@ -30,7 +30,8 @@ const addImages = (page: Page, sizes: [number, number, string][]) =>
   })()`);
 
 const pick = async (page: Page, label: string) => {
-  await page.getByRole("button", { name: label, exact: true }).click();
+  // In the left panel: Properties has its own options with the same names.
+  await page.getByRole("complementary", { name: "Panel" }).getByRole("button", { name: label, exact: true }).click();
   await page.waitForTimeout(120);
 };
 const images = (page: Page) =>
@@ -526,9 +527,8 @@ test.describe("history and saving", () => {
   });
 });
 
-test("the rail has Layout, and Position explains itself in a layout", async ({ page }) => {
-  await openApp(page);
-  await page.getByRole("button", { name: "Layout", exact: true }).click();
+test("Layout is under Design, and Position explains itself in a layout", async ({ page }) => {
+  await openApp(page, "Layout");
   await expect(page.getByText("PICK A LAYOUT")).toBeVisible();
   await expect(page.getByText("PRO")).toHaveCount(0);
 
@@ -536,6 +536,6 @@ test("the rail has Layout, and Position explains itself in a layout", async ({ p
   await pick(page, "Side by side");
   await page.evaluate(`S.getState().selectElement(${JSON.stringify(first)})`);
   await expect(page.getByRole("button", { name: "Padding", exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: "Position", exact: true }).click();
-  await expect(page.getByText("This image's place comes from its layout.", { exact: false })).toBeVisible();
+  await openSection(page, "Position & size");
+  await expect(page.getByText("Its place comes from the layout.", { exact: false })).toBeVisible();
 });

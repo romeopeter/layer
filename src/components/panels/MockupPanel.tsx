@@ -27,7 +27,7 @@ import { cn } from "@/lib/utils";
 import { useEditor } from "@/store/editor";
 import type { DeviceFrame, ImageElement } from "@/types";
 import { BrowserThumb, ScreenThumb } from "./MockupThumbs";
-import { ColorRow, LabeledSlider, PanelDesc, PanelHelp, PanelTitle, SectionLabel } from "./primitives";
+import { ColorRow, LabeledSlider, PanelDesc, PanelHelp, SectionLabel } from "./primitives";
 import { choiceClass } from "./choice";
 
 const cellClass = (active: boolean, disabled: boolean) =>
@@ -287,7 +287,6 @@ export const MockupPanel = () => {
 
   return (
     <div className="flex flex-col gap-2.5 px-4 pb-6 pt-4">
-      <PanelTitle>MOCKUP</PanelTitle>
       {!image && <PanelDesc>Select an image to put it in a mockup.</PanelDesc>}
 
       {/* A new image starts on the tab its own mockup is in. */}

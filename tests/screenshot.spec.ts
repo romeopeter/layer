@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { fakeShell, openApp, PNG_2X2, shellCalls } from "./helpers";
+import { fakeShell, openApp, openTool, PNG_2X2, shellCalls } from "./helpers";
 
 const BUTTON = { name: "Add screenshot", exact: true };
 const images = (page: import("@playwright/test").Page) =>
@@ -19,8 +19,8 @@ test.describe("on the macOS desktop", () => {
     expect(await shellCalls(page, "capture_screen")).toHaveLength(1);
     expect(await page.evaluate(`S.getState().cropId`)).toBeNull();
 
-    await page.getByRole("button", { name: "Background", exact: true }).click();
-    await page.getByRole("radio", { name: "Image" }).click();
+    await openTool(page, "Background");
+    await page.getByRole("radio", { name: "Image", exact: true }).click();
     await page.getByRole("button", BUTTON).click();
     await page.keyboard.press("Space");
     await expect

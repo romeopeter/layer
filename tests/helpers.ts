@@ -14,8 +14,40 @@ export const openApp = async (page: Page, tool?: string) => {
     window.P = await import("/src/lib/imageEdit/presets.ts");
     window.X = await import("/src/lib/exporters.ts");
   })()`);
-  if (tool) await page.getByRole("button", { name: tool, exact: true }).click();
+  if (tool) await openTool(page, tool);
   return errors;
+};
+
+/** Where each old panel lives now: a rail group, then a tab in it. */
+const PLACES: Record<string, [string, string?]> = {
+  Images: ["Add", "Images"],
+  Uploads: ["Add", "Uploads"],
+  Text: ["Add", "Text"],
+  Mark: ["Add", "Elements"],
+  Elements: ["Add", "Elements"],
+  Templates: ["Templates"],
+  Background: ["Design", "Background"],
+  Layout: ["Design", "Layout"],
+  Mockup: ["Design", "Mockup"],
+  Layers: ["Design", "Layers"],
+  Watermark: ["Brand", "Watermark"],
+  "Brand kit": ["Brand", "Brand kit"],
+  Animate: ["Animate"],
+};
+
+/** Opens a left-panel view by its name, through the rail group and its tab. */
+export const openTool = async (page: Page, name: string) => {
+  const [group, tab] = PLACES[name] ?? [name];
+  const rail = page.getByRole("navigation", { name: "Tools" }).getByRole("button", { name: group, exact: true });
+  // Clicking the open group would hide its panel instead.
+  if ((await rail.getAttribute("aria-pressed")) !== "true") await rail.click();
+  if (tab) await page.getByRole("group", { name: `${group} views` }).getByRole("radio", { name: tab, exact: true }).click();
+};
+
+/** Opens a section of the Properties panel, if it isn't open already. */
+export const openSection = async (page: Page, title: string) => {
+  const header = page.getByRole("complementary", { name: "Properties" }).getByRole("button", { name: title, exact: true });
+  if ((await header.getAttribute("aria-expanded")) !== "true") await header.click();
 };
 
 /** Puts a two-tone 800×400 image on the canvas at a known place, selected. */

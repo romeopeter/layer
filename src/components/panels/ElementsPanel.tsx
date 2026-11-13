@@ -14,8 +14,6 @@ import {
   MessageSquare,
   MoveUpRight,
   Pencil,
-  PenLine,
-  Plus,
   PlusSquare,
   QrCode,
   Shapes,
@@ -36,11 +34,10 @@ import { cn } from "@/lib/utils";
 import {
   PanelDesc,
   PanelHelp,
-  PanelLink,
   PanelTitle,
-  SectionLabel,
-} from "./primitives";
+  } from "./primitives";
 import { OptionGrid, StyleControls } from "./mark/StyleControls";
+import { layerName } from "@/lib/layerNames";
 
 /* ------------------------------------------------------------------------------------------- */
 
@@ -119,35 +116,6 @@ const ITEMS: {
     opensImages: true,
   },
 ];
-
-const SHAPE_LABELS: Partial<Record<ShapeKind, string>> = {
-  rect: "Rectangle",
-  "rounded-rect": "Rounded",
-  ellipse: "Ellipse",
-  triangle: "Triangle",
-  diamond: "Diamond",
-  pentagon: "Pentagon",
-  hexagon: "Hexagon",
-  star: "Star",
-  heart: "Heart",
-  cross: "Cross",
-  arrow: "Arrow",
-  line: "Line",
-  highlight: "Highlight",
-  callout: "Callout",
-  "qr-code": "QR Code",
-  pencil: "Draw",
-  number: "Number",
-  emoji: "Emoji",
-  icons: "Icon",
-  badge: "Badge",
-};
-
-const layerName = (element: LayerElement) => {
-  if (element.type === "image") return "Image";
-  if (element.type === "text") return element.text.trim().split("\n")[0] || "Text";
-  return SHAPE_LABELS[element.shape] ?? element.shape;
-};
 
 const PLACE_HINT = "Click the canvas to place it, or drag to set its size.";
 
@@ -447,42 +415,22 @@ const ToolPanel = ({ tool }: { tool: MarkTool }) => {
   );
 };
 
-export const AnnotationPanel = () => {
-  const [addOpen, setAddOpen] = useState(false);
+/** Add › Elements: shapes, arrows, callouts, highlighter, emoji, icons, QR codes and more. */
+export const ElementsPanel = () => {
   const [view, setView] = useState<MarkView | null>(null);
-  const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
-  const elements = useEditor((s) => s.elements);
-  const selectedIds = useEditor((s) => s.selectedIds);
-  const selectElement = useEditor((s) => s.selectElement);
-  const updateElement = useEditor((s) => s.updateElement);
-  const deleteElement = useEditor((s) => s.deleteElement);
-  const duplicateElement = useEditor((s) => s.duplicateElement);
-  const reorderElement = useEditor((s) => s.reorderElement);
   const setActiveTool = useEditor((s) => s.setActiveTool);
   const markTool = useEditor((s) => s.markTool);
   const setMarkTool = useEditor((s) => s.setMarkTool);
-
-  // Front-most first, so the list reads the way the canvas stacks.
-  const layers = elements.slice().reverse();
-  const selected = elements.find((element) => selectedIds.includes(element.id));
-  const hasLayers = elements.length > 0;
 
   const pickItem = (item: (typeof ITEMS)[number]) => {
     if (item.tool) setMarkTool(item.tool);
     if (item.view) setView(item.view);
     if (item.opensImages) setActiveTool("images");
-    setAddOpen(false);
   };
 
   const placeFromView = (shape: ShapeKind, preset: Partial<ShapeElement>) => {
     setMarkTool({ kind: "stamp", shape, preset });
     setView(null);
-  };
-
-  const endRowDrag = () => {
-    setDraggingId(null);
-    setDropTargetId(null);
   };
 
   if (markTool) return <ToolPanel tool={markTool} />;
@@ -497,143 +445,77 @@ export const AnnotationPanel = () => {
     return (
       <div className="flex h-full flex-col">
         <SubviewHeader title={titles[view]} onBack={() => setView(null)} />
-        <Suspense
-          fallback={<PanelHelp className="px-4 pt-4">Loading…</PanelHelp>}
-        >
-          {view === "emoji" && (
-            <EmojiPicker onPick={(text) => placeFromView("emoji", { text })} />
-          )}
+        <Suspense fallback={<PanelHelp className="px-4 pt-4">Loading…</PanelHelp>}>
+          {view === "emoji" && <EmojiPicker onPick={(text) => placeFromView("emoji", { text })} />}
           {view === "icons" && (
-            <IconPicker
-              onPick={(text, iconPath) =>
-                placeFromView("icons", { text, iconPath })
-              }
-            />
+            <IconPicker onPick={(text, iconPath) => placeFromView("icons", { text, iconPath })} />
           )}
         </Suspense>
-        {view === "qr" && (
-          <QrForm onAdd={(text) => placeFromView("qr-code", { text })} />
-        )}
+        {view === "qr" && <QrForm onAdd={(text) => placeFromView("qr-code", { text })} />}
       </div>
     );
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <PanelTitle className="mb-0">
-          <div className="flex items-center gap-1">
-            <PenLine className="h-4.5 w-4.5" />
-            <span>MARK</span>
-          </div>
-        </PanelTitle>
-        {hasLayers && (
-          <div className="relative">
-            <Button
-              type="button"
-              size="sm"
-              className="h-8 rounded-md px-3"
-              onClick={() => setAddOpen(!addOpen)}
-            >
-              Add <Plus className="h-3.5 w-3.5" />
-            </Button>
-            {addOpen && (
-              <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-64 rounded-lg border border-hairline-strong bg-panel p-2 shadow-[0_24px_70px_rgba(0,0,0,0.65)]">
-                <div className="mb-2 flex items-center justify-between px-1">
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-p-200">
-                    Add mark
-                  </span>
-                  <button
-                    type="button"
-                    className="text-[10px] text-text-faint hover:text-text"
-                    onClick={() => setAddOpen(false)}
-                  >
-                    Close
-                  </button>
-                </div>
-                <OptionGrid
-                  options={ITEMS}
-                  onPick={(index) => pickItem(ITEMS[index])}
-                  className="grid-cols-4"
-                />
-              </div>
-            )}
-          </div>
-        )}
+    <div className="flex flex-col gap-2.5 px-4 pb-6 pt-4">
+      <OptionGrid options={ITEMS} onPick={(index) => pickItem(ITEMS[index])} />
+      <PanelHelp>Pick one, then click or drag on the canvas to place it.</PanelHelp>
+    </div>
+  );
+};
+
+/** Design › Layers: everything on the canvas, front-most first, to select, lock, hide and reorder. */
+export const LayersPanel = () => {
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  const elements = useEditor((s) => s.elements);
+  const selectedIds = useEditor((s) => s.selectedIds);
+  const selectElement = useEditor((s) => s.selectElement);
+  const updateElement = useEditor((s) => s.updateElement);
+  const deleteElement = useEditor((s) => s.deleteElement);
+  const duplicateElement = useEditor((s) => s.duplicateElement);
+  const reorderElement = useEditor((s) => s.reorderElement);
+
+  // Front-most first, so the list reads the way the canvas stacks.
+  const layers = elements.slice().reverse();
+
+  const endRowDrag = () => {
+    setDraggingId(null);
+    setDropTargetId(null);
+  };
+
+  if (!layers.length) {
+    return (
+      <div className="px-4 pb-6 pt-4">
+        <PanelHelp>Nothing on the canvas yet. Add images, text or elements, and they'll be listed here.</PanelHelp>
       </div>
+    );
+  }
 
-      {!hasLayers ? (
-        <div className="flex flex-col gap-2.5 px-4 pb-6 pt-4">
-          <SectionLabel>ADD MARK</SectionLabel>
-          <OptionGrid
-            options={ITEMS}
-            onPick={(index) => pickItem(ITEMS[index])}
-          />
-          <PanelHelp>Pick a tool, then draw it on the canvas.</PanelHelp>
-        </div>
-      ) : (
-        <>
-          <div className="px-4 pb-4 pt-3">
-            <SectionLabel>LAYERS</SectionLabel>
-            {/* Capped so a long list can't push the settings below it out of reach. */}
-            <div className="flex max-h-60 flex-col gap-1.5 overflow-y-auto">
-              {layers.map((element, index) => (
-                <LayerRow
-                  key={element.id}
-                  element={element}
-                  index={index}
-                  active={element.id === selected?.id}
-                  dropTarget={
-                    element.id === dropTargetId && element.id !== draggingId
-                  }
-                  onSelect={() => selectElement(element.id)}
-                  onToggleLock={() =>
-                    updateElement(element.id, { locked: !element.locked })
-                  }
-                  onToggleHidden={() =>
-                    updateElement(element.id, { hidden: !element.hidden })
-                  }
-                  onDragStart={() => setDraggingId(element.id)}
-                  onDragOver={() => setDropTargetId(element.id)}
-                  onDragEnd={endRowDrag}
-                  onDrop={() => {
-                    if (draggingId) reorderElement(draggingId, element.id);
-                    endRowDrag();
-                  }}
-                  onDuplicate={() => duplicateElement(element.id)}
-                  onDelete={() => deleteElement(element.id)}
-                />
-              ))}
-            </div>
-          </div>
-
-          <div className="border-t border-border px-4 pb-6 pt-4">
-            {!selected && <PanelDesc>Select a layer to edit it.</PanelDesc>}
-            {selected?.type === "shape" && (
-              <StyleControls
-                subject={selected}
-                onChange={(patch) => updateElement(selected.id, patch)}
-              />
-            )}
-            {selected?.type === "text" && (
-              <>
-                <PanelDesc>
-                  Double-click it on the canvas to type. Side handles rewrap it;
-                  corner handles change its size.
-                </PanelDesc>
-                <PanelLink onClick={() => setActiveTool("header")}>
-                  Change font and size
-                </PanelLink>
-              </>
-            )}
-            {selected?.type === "image" && (
-              <PanelLink onClick={() => setActiveTool("position")}>
-                Change size and position
-              </PanelLink>
-            )}
-          </div>
-        </>
-      )}
+  return (
+    <div className="flex flex-col gap-1.5 px-4 pb-6 pt-4">
+      {layers.map((element, index) => (
+        <LayerRow
+          key={element.id}
+          element={element}
+          index={index}
+          active={selectedIds.includes(element.id)}
+          dropTarget={element.id === dropTargetId && element.id !== draggingId}
+          onSelect={() => selectElement(element.id)}
+          onToggleLock={() => updateElement(element.id, { locked: !element.locked })}
+          onToggleHidden={() => updateElement(element.id, { hidden: !element.hidden })}
+          onDragStart={() => setDraggingId(element.id)}
+          onDragOver={() => setDropTargetId(element.id)}
+          onDragEnd={endRowDrag}
+          onDrop={() => {
+            if (draggingId) reorderElement(draggingId, element.id);
+            endRowDrag();
+          }}
+          onDuplicate={() => duplicateElement(element.id)}
+          onDelete={() => deleteElement(element.id)}
+        />
+      ))}
+      <PanelHelp>Drag a row to move it in front of or behind the others.</PanelHelp>
     </div>
   );
 };

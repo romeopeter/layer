@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { LayoutPanelLeft, Maximize, Upload, Paintbrush } from "lucide-react";
+import { Maximize, Upload, Paintbrush } from "lucide-react";
 import { useEditor } from "@/store/editor";
 import type { CanvasLayout, LayoutAlign, LayoutId } from "@/types";
 import { cn } from "@/lib/utils";
@@ -18,7 +18,6 @@ import {
   Linebreak,
   PanelDesc,
   PanelHelp,
-  PanelTitle,
   SectionLabel,
   SwitchRow,
 } from "./primitives";
@@ -141,11 +140,6 @@ export const LayoutPanel = () => {
   return (
     <div className="flex flex-col gap-4 px-4 pb-6 pt-4">
       <div className="flex flex-col gap-2">
-        <PanelTitle>
-          <div className="flex items-center gap-1">
-            <span>LAYOUT</span> <LayoutPanelLeft className="h-4.5 w-4.5" />
-          </div>
-        </PanelTitle>
         <PanelDesc>Put images together. They arrange themselves.</PanelDesc>
       </div>
 

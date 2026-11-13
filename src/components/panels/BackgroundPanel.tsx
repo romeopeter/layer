@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { LayoutDashboard, Upload } from "lucide-react";
+import { Upload } from "lucide-react";
 import { useEditor } from "@/store/editor";
 import { cn } from "@/lib/utils";
 import { fileToDataURL } from "@/lib/importers";
@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  PanelTitle,
   SectionLabel,
   LabeledSlider,
   ColorRow,
@@ -62,11 +61,6 @@ export const BackgroundPanel = () => {
 
   return (
     <div className="flex flex-col gap-4 px-4 pb-6 pt-4">
-      <PanelTitle>
-        <div className="flex items-center gap-1">
-          <span>BACKGROUND</span> <LayoutDashboard className="h-4.5 w-4.5" />
-        </div>
-      </PanelTitle>
 
       <div className="w-full max-w-full space-y-2.5">
         <SectionLabel>TYPE</SectionLabel>

@@ -103,6 +103,16 @@ const TextNodeBody = ({ el, onSelect }: Props) => {
         lineHeight={el.lineHeight}
         letterSpacing={el.letterSpacing}
         visible={!editing}
+        // The shadow from Properties, behind the letters.
+        {...(el.shadow?.enabled
+          ? {
+              shadowColor: el.shadow.color,
+              shadowBlur: el.shadow.blur,
+              shadowOffsetX: el.shadow.offsetX,
+              shadowOffsetY: el.shadow.offsetY,
+              shadowOpacity: 1,
+            }
+          : {})}
       />
     </Group>
   );

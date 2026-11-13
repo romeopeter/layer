@@ -1,12 +1,11 @@
 import { useRef } from "react";
-import { Image as ImageIcon, Upload } from "lucide-react";
+import { Image as Upload } from "lucide-react";
 import { useEditor } from "@/store/editor";
 import { Button } from "@/components/ui/button";
 import { importImageFile } from "@/lib/importers";
-import { ImageEditSection } from "./ImageEditSection";
 import { ScreenshotButton } from "./ScreenshotButton";
 import { StockImages } from "./StockImages";
-import { PanelHelp, PanelTitle, SectionLabel, Linebreak } from "./primitives";
+import { PanelHelp, SectionLabel, Linebreak } from "./primitives";
 
 export const ImagesPanel = () => {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -27,11 +26,6 @@ export const ImagesPanel = () => {
   return (
     <div className="flex flex-col gap-4 px-4 pb-6 pt-4">
       <div className="flex flex-col gap-2">
-        <PanelTitle>
-          <div className="flex items-center gap-1">
-            <span>IMAGES</span> <ImageIcon className="h-4.5 w-4.5" />
-          </div>
-        </PanelTitle>
 
         <Button
           variant="primary"
@@ -87,8 +81,6 @@ export const ImagesPanel = () => {
           </div>
         )}
       </div>
-
-      <ImageEditSection />
     </div>
   );
 };

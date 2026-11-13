@@ -1,38 +1,18 @@
 import { useEditor } from "@/store/editor";
-import { PanelTitle, SectionLabel, LabeledSlider, PanelDesc } from "./primitives";
+import type { LayerElement } from "@/types";
+import { SectionLabel, LabeledSlider, PanelHelp } from "./primitives";
 import { PlaceGrid } from "./PlaceGrid";
 
 /* ---------------------------------------------------------------------------------------------- */
 
-export const PositionPanel = () => {
-  const selectedIds = useEditor((s) => s.selectedIds);
-  const elements = useEditor((s) => s.elements);
+/** Where a layer sits and how big it is: nine quick places, then exact numbers. */
+export const PositionControls = ({ el }: { el: LayerElement }) => {
   const canvas = useEditor((s) => s.canvas);
   const update = useEditor((s) => s.updateElement);
-
-  const el = elements.find((e) => e.id === selectedIds[0]);
-  const inLayout = useEditor((s) => !!s.layout?.slots.some((slot) => slot.id === el?.id));
-
-  if (!el) {
-    return (
-      <div className="flex flex-col gap-2.5 px-4 pb-6 pt-4">
-        <PanelTitle>POSITION</PanelTitle>
-        <PanelDesc>
-          Select an element to adjust its position and scale.
-        </PanelDesc>
-      </div>
-    );
-  }
+  const inLayout = useEditor((s) => !!s.layout?.slots.some((slot) => slot.id === el.id));
 
   if (inLayout) {
-    return (
-      <div className="flex flex-col gap-2.5 px-4 pb-6 pt-4">
-        <PanelTitle>POSITION</PanelTitle>
-        <PanelDesc>
-          This image's place comes from its layout. Choose None in Layout to move it freely.
-        </PanelDesc>
-      </div>
-    );
+    return <PanelHelp>Its place comes from the layout. Choose None in Layout to move it freely.</PanelHelp>;
   }
 
   const placeOf = (h: number, v: number) => ({
@@ -46,9 +26,7 @@ export const PositionPanel = () => {
   };
 
   return (
-    <div className="flex flex-col gap-2.5 px-4 pb-6 pt-4">
-      <PanelTitle>POSITION</PanelTitle>
-      <PanelDesc>Move the selected layer to an edge, a corner or the center, or set X and Y.</PanelDesc>
+    <div className="flex flex-col gap-2.5">
 
       <PlaceGrid
         chosen={[0, 1, 2, 3, 4, 5, 6, 7, 8].find((i) => isAt(i % 3, Math.floor(i / 3))) ?? null}
@@ -122,13 +100,6 @@ export const PositionPanel = () => {
         max={180}
         value={Math.round(el.rotation)}
         onChange={(v) => update(el.id, { rotation: v })}
-      />
-      <LabeledSlider
-        label="OPACITY"
-        unit="%"
-        max={100}
-        value={Math.round(el.opacity * 100)}
-        onChange={(v) => update(el.id, { opacity: v / 100 })}
       />
 
     </div>

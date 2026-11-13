@@ -6,6 +6,7 @@ import { normaliseSavedBackgrounds } from "@/lib/background/normalise";
 import { TopBar } from "@/components/TopBar";
 import { LeftRail } from "@/components/LeftRail";
 import { PanelHost } from "@/components/panels";
+import { PropertiesPanel } from "@/components/properties/PropertiesPanel";
 import { CanvasStage } from "@/components/canvas/CanvasStage";
 import { GridControl } from "@/components/canvas/GridControl";
 import { SocialPreviewModal } from "@/components/SocialPreviewModal";
@@ -38,6 +39,7 @@ const layoutSlotAt = (clientX: number, clientY: number) => {
 
 export const App = () => {
   const activeTool = useEditor((s) => s.activeTool);
+  const leftPanelOpen = useEditor((s) => s.leftPanelOpen);
   const zoom = useEditor((s) => s.zoom);
   const setZoom = useEditor((s) => s.setZoom);
   const addImage = useEditor((s) => s.addImage);
@@ -145,12 +147,14 @@ export const App = () => {
       <div className="flex min-h-0 flex-1">
         <LeftRail hiddenTools={hiddenTools} />
 
-        <aside className="z-10 w-72.5 shrink-0 overflow-y-auto border-r border-hairline bg-panel">
-          <PanelHost
-            activeTool={activeTool}
-            onOpenCustomizeModal={() => setCustomizeOpen(true)}
-          />
-        </aside>
+        {leftPanelOpen && (
+          <aside aria-label="Panel" className="z-10 w-72.5 shrink-0 overflow-hidden border-r border-hairline bg-panel">
+            <PanelHost
+              activeTool={activeTool}
+              onOpenCustomizeModal={() => setCustomizeOpen(true)}
+            />
+          </aside>
+        )}
 
         <main className="relative min-w-0 flex-1 overflow-hidden bg-canvas">
           <div className="size-full bg-dot-grid absolute inset-0 bottom-20 flex items-center justify-center">
@@ -241,6 +245,7 @@ export const App = () => {
             </div>
           </div>
         </main>
+        <PropertiesPanel />
       </div>
 
       <SocialPreviewModal

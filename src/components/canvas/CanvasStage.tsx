@@ -13,6 +13,7 @@ import { SelectionToolbar } from "./SelectionToolbar";
 import { GRID_LAYER_NAME, GridOverlay } from "./GridOverlay";
 import { SnapGuides, type SnapGuidesHandle } from "./SnapGuides";
 import { Watermarks } from "./Watermarks";
+import { revealSection } from "@/components/properties/revealSection";
 import { BACKGROUND_LAYER_NAME } from "./stageRef";
 import { MarkDraft, type MarkDraftHandle } from "./MarkDraft";
 import { MARK_HANDLES_LAYER_NAME, MarkHandles } from "./MarkHandles";
@@ -21,7 +22,6 @@ import { CROP_LAYER_NAME, CropOverlay, type CropOverlayHandle } from "./CropOver
 import { boundsOf, CONTENT_LAYER_NAME, snapCandidatesFor } from "./snapCandidates";
 import { useMarkPlacement } from "./useMarkPlacement";
 import { setStage } from "./stageRef";
-import { IMAGE_EDIT_SECTION_ID } from "@/lib/imageEdit/presets";
 import { arrangeLayout } from "@/lib/layouts";
 import {
   computeSnap,
@@ -86,6 +86,9 @@ const isElementNode = (node: Konva.Node) => {
   return !!id && useEditor.getState().elements.some((el) => el.id === id);
 };
 
+/** Room kept around the canvas when it's fitted to its area, in screen pixels. */
+const FIT_PADDING = 40;
+
 export const CanvasStage = () => {
   // Store selectors
   const canvas = useEditor((s) => s.canvas);
@@ -144,15 +147,15 @@ export const CanvasStage = () => {
   }));
 
   useEffect(() => {
+    // Measures the canvas area around the stage, not the stage's own wrapper: the
+    // wrapper takes its size from the canvas, so measuring it would feed back.
+    const area = () => wrapRef.current?.parentElement ?? null;
     const compute = () => {
-      const wrap = wrapRef.current;
-      if (!wrap) return;
+      const space = area();
+      if (!space) return;
 
-      // const availW = wrap.clientWidth - padding;
-      // const availH = wrap.clientHeight - padding - 80; // leave room for hints/timeline
-
-      const availW = 1400;
-      const availH = 950;
+      const availW = space.clientWidth - FIT_PADDING * 2;
+      const availH = space.clientHeight - FIT_PADDING * 2;
 
       // Guard against invalid dimensions - don't update if wrapper isn't sized yet
       if (availW <= 0 || availH <= 0) return;
@@ -168,7 +171,8 @@ export const CanvasStage = () => {
     };
 
     const requestObserver = new ResizeObserver(compute);
-    if (wrapRef.current) requestObserver.observe(wrapRef.current);
+    const space = area();
+    if (space) requestObserver.observe(space);
 
     return () => requestObserver.disconnect();
   }, [canvas.width, canvas.height, zoom]);
@@ -673,15 +677,7 @@ export const CanvasStage = () => {
             onImageChange={(patch) =>
               updateElement(selectedToolbarElement.id, patch)
             }
-            onEdit={() => {
-              setActiveTool("images");
-              // After the panel has rendered, since the section may not exist until then.
-              requestAnimationFrame(() =>
-                document
-                  .getElementById(IMAGE_EDIT_SECTION_ID)
-                  ?.scrollIntoView({ block: "start" }),
-              );
-            }}
+            onEdit={() => revealSection("image.edit")}
             onHighlight={() => {
               setActiveTool("annotation");
               useEditor
@@ -698,7 +694,7 @@ export const CanvasStage = () => {
             onLayerForward={() => moveSelectedElement(1)}
             onLayerBackward={() => moveSelectedElement(-1)}
             onTextChange={updateSelectedText}
-            onOpenTextPanel={() => setActiveTool("header")}
+            onOpenTextPanel={() => revealSection("text.typography")}
           />
         )}
       </div>

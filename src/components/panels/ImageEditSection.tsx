@@ -6,7 +6,6 @@ import {
   Expand,
   RotateCcw,
   Scaling,
-  SlidersHorizontal,
   Upload,
 } from "lucide-react";
 import useImage from "use-image";
@@ -41,10 +40,8 @@ import { FixEditor, type FixResult, type FixTool } from "./fix/FixEditor";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   LabeledSlider,
-  Linebreak,
   PanelDesc,
   PanelHelp,
-  PanelTitle,
   SectionLabel,
 } from "./primitives";
 import { choiceClass } from "./choice";
@@ -62,13 +59,6 @@ const FOCUS_MAX_HEIGHT = 160;
 type Tab = "fix" | "style" | "adjust";
 type SetEdit = (patch: Partial<ImageEdit>) => void;
 
-const Title = () => (
-  <PanelTitle>
-    <div className="flex items-center gap-1">
-      <span>EDIT</span> <SlidersHorizontal className="h-4.5 w-4.5" />
-    </div>
-  </PanelTitle>
-);
 
 /** A small copy of the picture, so every option previews on the user's own image. */
 const useThumbSource = (src: string) => {
@@ -766,30 +756,16 @@ const AdjustTab = ({
 /* ------------------------------------------------------------------------------------------- */
 
 /** Bottom of the Images panel: edits the selected image. */
-export const ImageEditSection = () => {
-  const selectedIds = useEditor((s) => s.selectedIds);
-  const elements = useEditor((s) => s.elements);
+/** Fix, Style and Adjust for the selected image, in Properties. */
+export const ImageEditSection = ({ image }: { image: ImageElement }) => {
   const update = useEditor((s) => s.updateElement);
   const [tab, setTab] = useState<Tab>("style");
+  const source = useThumbSource(image.src);
 
-  const image = elements.find(
-    (e) => e.id === selectedIds[0] && e.type === "image",
-  ) as ImageElement | undefined;
-  const source = useThumbSource(image?.src ?? "");
-
-  // Nothing to edit yet: the panel stays about adding images.
-  if (!elements.some((e) => e.type === "image")) return null;
-
-  if (!image || !isImageEditSupported()) {
+  if (!isImageEditSupported()) {
     return (
       <div id={IMAGE_EDIT_SECTION_ID} className="flex flex-col gap-2.5">
-        <Linebreak />
-        <Title />
-        <PanelDesc>
-          {image
-            ? "This device's graphics can't run image editing."
-            : "Select an image to edit it."}
-        </PanelDesc>
+        <PanelDesc>This device's graphics can't run image editing.</PanelDesc>
       </div>
     );
   }
@@ -799,8 +775,6 @@ export const ImageEditSection = () => {
 
   return (
     <div id={IMAGE_EDIT_SECTION_ID} className="flex flex-col gap-4">
-      <Linebreak />
-      <Title />
 
       <ToggleGroup
         type="single"

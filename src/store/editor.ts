@@ -36,6 +36,7 @@ import {
 } from "../lib/background/looks";
 import { storeSavedBackgrounds } from "../lib/host";
 import { DEFAULT_WATERMARK, normaliseWatermark } from "../lib/watermark";
+import { inLook, lookBackground, type DesignLook } from "../lib/looks";
 import { migrateElement, nextNumber } from "../lib/marks";
 import { placeFrame } from "../lib/mockups";
 import { DEFAULT_MARK_STYLES, shapeDefaults } from "../lib/markTools";
@@ -101,6 +102,11 @@ const DEFAULT_GRID: GridState = {
   opacity: 0.45,
 };
 
+/**
+ * What the left panel shows. Each belongs to a rail group (see `railTools.tsx`):
+ * Add, Templates, Design, Brand or Animate. A selected object's settings are in
+ * the Properties panel instead, whatever this is.
+ */
 type Tool =
   | "ai"
   | "uploads"
@@ -109,11 +115,8 @@ type Tool =
   | "annotation"
   | "background"
   | "mockup"
-  | "position"
-  | "3d"
-  | "shadow"
-  | "border"
   | "layout"
+  | "layers"
   | "header"
   | "watermark"
   | "brands"
@@ -131,6 +134,10 @@ interface EditorState {
   layout: CanvasLayout | null;
 
   activeTool: Tool;
+  /** Whether the left panel is showing. Clicking the active rail group hides it. */
+  leftPanelOpen: boolean;
+  /** Which Properties sections are open, by section id. Lasts the session. */
+  openSections: Record<string, boolean>;
   zoom: number;
   grid: GridState;
   /** Smart guides + snapping while dragging. A view aid, like `grid`. */
@@ -158,6 +165,10 @@ interface EditorState {
 
   // tool / UI
   setActiveTool: (t: Tool) => void;
+  setLeftPanelOpen: (open: boolean) => void;
+  setSectionOpen: (id: string, open: boolean) => void;
+  /** Dresses the whole design in a look, as one undo step. */
+  applyLook: (look: DesignLook) => void;
   setZoom: (z: number) => void;
   setGrid: (g: Partial<GridState>) => void;
   toggleGrid: () => void;
@@ -241,8 +252,10 @@ export const useEditor = create<EditorState>((set, get) => ({
   selectedIds: [],
   layout: null,
 
-  activeTool: "uploads",
-  zoom: 62,
+  activeTool: "images",
+  leftPanelOpen: true,
+  openSections: {},
+  zoom: 100,
   grid: DEFAULT_GRID,
   // On by default: this is the behaviour people expect from an editor, and it
   // is unobtrusive because guides only appear when something actually lines up.
@@ -259,7 +272,16 @@ export const useEditor = create<EditorState>((set, get) => ({
   canRedo: false,
 
   setActiveTool: (t) =>
-    set({ activeTool: t, markTool: null, editingId: null, cropId: null }),
+    set({ activeTool: t, leftPanelOpen: true, markTool: null, editingId: null, cropId: null }),
+
+  setLeftPanelOpen: (open) => set({ leftPanelOpen: open }),
+
+  setSectionOpen: (id, open) => set({ openSections: { ...get().openSections, [id]: open } }),
+
+  applyLook: (look) => {
+    const { background, elements } = get();
+    set({ background: lookBackground(look, background), elements: elements.map((el) => inLook(look, el)) });
+  },
   setZoom: (z) => set({ zoom: Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.round(z))) }),
 
   setGrid: (g) => {

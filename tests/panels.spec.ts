@@ -1,11 +1,11 @@
 import { expect, test } from "@playwright/test";
-import { addTwoToneImage, openApp, solidPng } from "./helpers";
+import { addTwoToneImage, openApp, openSection, solidPng } from "./helpers";
 
 test.describe("Position", () => {
   test("arrows send the layer to each place, and show where it is", async ({ page }) => {
     const errors = await openApp(page);
     const id = await addTwoToneImage(page);
-    await page.getByRole("button", { name: "Position", exact: true }).click();
+    await openSection(page, "Position & size");
     const canvas: { width: number; height: number } = await page.evaluate(`S.getState().canvas`);
 
     for (const [label, h, v] of [
@@ -60,7 +60,8 @@ test.describe("Corner", () => {
   test("corners follow the image's size, and a border is on when it has a width", async ({ page }) => {
     const errors = await openApp(page);
     const id = await addTwoToneImage(page);
-    await page.getByRole("button", { name: "Corner", exact: true }).click();
+    // Open by default for an image, in Properties.
+    await expect(page.getByRole("button", { name: "Appearance", exact: true })).toHaveAttribute("aria-expanded", "true");
     await expect(page.getByText("ENABLE BORDER")).toHaveCount(0);
 
     await page.getByRole("button", { name: "Full corners" }).click();

@@ -1,7 +1,7 @@
 import { useEditor } from "@/store/editor";
-import type { ImageElement, ShapeElement } from "@/types";
+import type { ImageElement, LayerElement, ShapeElement } from "@/types";
 import { cn } from "@/lib/utils";
-import { PanelTitle, SectionLabel, LabeledSlider, ColorRow, PanelDesc, PanelHelp } from "./primitives";
+import { SectionLabel, LabeledSlider, ColorRow, PanelHelp } from "./primitives";
 import { Linebreak } from "./primitives";
 import { choiceClass } from "./choice";
 
@@ -32,31 +32,12 @@ const DEFAULT_BORDER_COLOR = "#FFFFFF";
 
 /* ---------------------------------------------------------------------------------------------------------------- */
 
-export const BorderPanel = () => {
-  const selectedIds = useEditor((s) => s.selectedIds);
-  const elements = useEditor((s) => s.elements);
+/** Rounded corners and a border, for an image or a shape. */
+export const CornerControls = ({ el }: { el: LayerElement }) => {
   const update = useEditor((s) => s.updateElement);
 
-  const el = elements.find((e) => e.id === selectedIds[0]);
-
-  if (!el) {
-    return (
-      <div className="flex flex-col gap-2.5 px-4 pb-6 pt-4">
-        <PanelTitle>CORNER</PanelTitle>
-        <PanelDesc>Select an element to round its corners or give it a border.</PanelDesc>
-      </div>
-    );
-  }
-
   if (el.type === "image" && el.deviceFrame) {
-    return (
-      <div className="flex flex-col gap-2.5 px-4 pb-6 pt-4">
-        <PanelTitle>CORNER</PanelTitle>
-        <PanelDesc>
-          A device has its own edges. Set Mockup to None to add a border or rounded corners.
-        </PanelDesc>
-      </div>
-    );
+    return <PanelHelp>A mockup has its own edges. Choose None in Mockup to round the corners or add a border.</PanelHelp>;
   }
 
   // A border is on when it has a width. Older files could have one switched off.
@@ -84,9 +65,7 @@ export const BorderPanel = () => {
   };
 
   return (
-    <div className="flex flex-col gap-4 px-4 pb-6 pt-4">
-      <PanelTitle>CORNER</PanelTitle>
-
+    <div className="flex flex-col gap-4">
       {canCorner && (
         <div className="space-y-2.5">
           <SectionLabel>CORNERS</SectionLabel>

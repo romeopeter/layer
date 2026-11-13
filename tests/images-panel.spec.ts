@@ -1,33 +1,38 @@
 import { expect, test } from "@playwright/test";
 import { addTwoToneImage, openApp, solidPng } from "./helpers";
 
-test("there's no Edit tool; editing appears in Images once there's an image", async ({ page }) => {
+test("editing an image is in Properties once it's selected, and the canvas's when it isn't", async ({ page }) => {
   await openApp(page, "Images");
-  await expect(page.getByRole("button", { name: "Edit", exact: true })).toHaveCount(0);
+  const properties = page.getByRole("complementary", { name: "Properties" });
   const section = page.locator("#image-edit");
   await expect(section).toHaveCount(0);
+  await expect(properties.getByText("Canvas", { exact: true })).toBeVisible();
 
   await page.setInputFiles('input[aria-label="Upload image to canvas"]', solidPng());
   for (const tab of ["Fix", "Style", "Adjust"]) {
     await expect(section.getByText(tab, { exact: true })).toBeVisible();
   }
+  await expect(properties.getByText("Image", { exact: true })).toBeVisible();
 
   await page.evaluate(`S.getState().selectElement(null)`);
-  await expect(section.getByText("Select an image to edit it.")).toBeVisible();
+  await expect(section).toHaveCount(0);
+  await expect(properties.getByText("Canvas", { exact: true })).toBeVisible();
 });
 
-test("the toolbar's Edit button opens the section, past a long list", async ({ page }) => {
+test("the toolbar's Edit button opens the Edit section, wherever the left panel is", async ({ page }) => {
   await openApp(page);
   await addTwoToneImage(page);
   await page.evaluate(`(() => {
     const s = S.getState();
-    const src = s.elements[0].src;
-    S.setState({ uploadedImages: Array.from({ length: 40 }, (_, i) => ({ id: "u" + i, src, naturalWidth: 800, naturalHeight: 400, createdAt: i })) });
-    s.setActiveTool("annotation");
+    s.setSectionOpen("image.edit", false);
+    s.setActiveTool("layers");
   })()`);
+  await expect(page.locator("#image-edit")).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  // The floating toolbar's, not the Properties section with the same name.
+  await page.locator('button[title="Edit"]').click();
 
-  await expect.poll(() => page.evaluate(`S.getState().activeTool`)).toBe("images");
   await expect(page.locator("#image-edit").getByText("Style", { exact: true })).toBeInViewport();
+  // The left panel stays where it was.
+  expect(await page.evaluate(`S.getState().activeTool`)).toBe("layers");
 });

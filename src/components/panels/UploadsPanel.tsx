@@ -5,7 +5,6 @@ import { importImageFile } from "@/lib/importers";
 import { Button } from "@/components/ui/button";
 import { KeyBadge } from "@/components/ui/key-badge";
 import {
-  PanelTitle,
   SectionLabel,
   PanelHelp,
   // PanelLink,
@@ -33,11 +32,6 @@ export const UploadsPanel = () => {
   return (
     <div className="flex flex-col gap-4 px-4 pb-6 pt-4">
       <div className="flex flex-col gap-2">
-        <PanelTitle>
-          <div className="flex items-center gap-1">
-            <span>UPLOADS</span> <Upload className="h-4.5 w-4.5" />
-          </div>
-        </PanelTitle>
 
         <Button
           variant="primary"

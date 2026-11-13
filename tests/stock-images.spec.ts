@@ -99,7 +99,7 @@ test.describe("on the desktop", () => {
 
   test("becomes the background from the Background panel", async ({ page }) => {
     await openApp(page, "Background");
-    await page.getByRole("radio", { name: "Image" }).click();
+    await page.getByRole("radio", { name: "Image", exact: true }).click();
     await box(page).fill("sky");
     await expect(page.getByText("Photos from Pixabay")).toBeVisible();
     await tiles(page).first().click();

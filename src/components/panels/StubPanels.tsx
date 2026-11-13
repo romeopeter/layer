@@ -1,12 +1,12 @@
 import {
-  Upload, Lock, Sparkles, Twitter, Image as ImageIcon, Figma, Chrome, Play,
+  Lock, Sparkles, Image as Play,
 } from "lucide-react";
 import { useEditor } from "@/store/editor";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/input";
 import { KeyBadge } from "@/components/ui/key-badge";
 import { Badge } from "@/components/ui/badge";
-import { PanelTitle, SectionLabel, SwitchRow, PanelDesc, PanelHelp } from "./primitives";
+import { PanelTitle, SectionLabel, SwitchRow, PanelDesc } from "./primitives";
 
 const Phase2Tag = () => <Badge variant="phase2" size="sm">PHASE 2</Badge>;
 
@@ -31,81 +31,6 @@ export const AiPanel = () => (
           className="rounded-full border border-hairline bg-p-200/10 px-2.5 py-1 text-[11px] text-text opacity-50"
         >
           {q}
-        </button>
-      ))}
-    </div>
-  </div>
-);
-
-export const TemplatesPanel = () => (
-  <div className="flex flex-col gap-2.5 px-4 pb-6 pt-4">
-    <PanelTitle badge={<Phase2Tag />}>TEMPLATES</PanelTitle>
-    <input
-      placeholder="Search templates…"
-      disabled
-      className="rounded-lg border border-hairline bg-chrome/50 px-2.5 py-2 text-xs text-text placeholder:text-text-faint"
-    />
-    <SectionLabel>CATEGORIES</SectionLabel>
-    <div className="flex flex-wrap gap-1.5">
-      {["Launches", "Quotes", "Tweets", "Stats", "Promos"].map((q) => (
-        <button
-          key={q}
-          type="button"
-          disabled
-          className="rounded-full border border-hairline bg-p-200/10 px-2.5 py-1 text-[11px] text-text opacity-50"
-        >
-          {q}
-        </button>
-      ))}
-    </div>
-    <SectionLabel right={<span className="font-mono text-[9.5px] text-text-faint">soon</span>}>
-      FEATURED
-    </SectionLabel>
-    <div className="grid grid-cols-2 gap-1.5">
-      {[
-        "from-[#2C2151] to-[#6B4FE6]",
-        "from-t-800 to-t-400",
-        "from-[#1A1826] to-p-600",
-        "from-a-400 to-a-200",
-        "from-[#0F0E1A] to-t-400",
-        "from-p-300 to-p-900",
-      ].map((g, i) => (
-        <div
-          key={i}
-          className={"aspect-[16/10] rounded-md border border-hairline bg-gradient-to-br " + g}
-        />
-      ))}
-    </div>
-  </div>
-);
-
-export const ImagesPanel = () => (
-  <div className="flex flex-col gap-2.5 px-4 pb-6 pt-4">
-    <PanelTitle>IMAGES</PanelTitle>
-    <Button variant="primary" size="block">
-      <Upload className="h-3.5 w-3.5" /> Upload Image
-    </Button>
-    <PanelHelp>Or paste <KeyBadge>⌘V</KeyBadge> from your clipboard</PanelHelp>
-
-    <SectionLabel>MORE INTEGRATIONS</SectionLabel>
-    <div className="flex flex-col gap-1.5">
-      {[
-        { Icon: Twitter, label: "Import Tweet" },
-        { Icon: ImageIcon, label: "Screenshot Website" },
-        { Icon: Figma, label: "Install Figma Plugin" },
-        { Icon: Chrome, label: "Install Chrome Extension" },
-      ].map(({ Icon, label }) => (
-        <button
-          key={label}
-          type="button"
-          disabled
-          className="flex items-center gap-2.5 rounded-md border border-hairline bg-white/[0.01] px-2.5 py-2 text-left text-xs text-text opacity-60 transition-colors hover:bg-p-200/[0.06]"
-        >
-          <span className="flex h-[22px] w-[22px] items-center justify-center text-p-200">
-            <Icon className="h-3.5 w-3.5" />
-          </span>
-          <span className="flex-1">{label}</span>
-          <Badge variant="phase2" size="sm">SOON</Badge>
         </button>
       ))}
     </div>

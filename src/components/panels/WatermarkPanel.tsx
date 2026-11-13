@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { Stamp, Upload, X } from "lucide-react";
+import { Upload, X } from "lucide-react";
 import { useEditor } from "@/store/editor";
 import type { WatermarkSettings } from "@/types";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,6 @@ import {
   Linebreak,
   PanelDesc,
   PanelHelp,
-  PanelTitle,
   SectionLabel,
   SwitchRow,
 } from "./primitives";
@@ -40,11 +39,6 @@ export const WatermarkPanel = () => {
 
   return (
     <div className="flex flex-col gap-4 px-4 pb-6 pt-4">
-      <PanelTitle>
-        <div className="flex items-center gap-1">
-          <span>WATERMARK</span> <Stamp className="h-4.5 w-4.5" />
-        </div>
-      </PanelTitle>
       <PanelDesc>Mark your exports with the Layer badge, your own name or your logo.</PanelDesc>
 
       <div className="space-y-2.5">
