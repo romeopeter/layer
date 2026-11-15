@@ -1,30 +1,50 @@
+import { useEditor } from "@/store/editor";
 import {
   AlignCenter,
   AlignLeft,
   AlignRight,
   Bold,
+  Check,
   Copy,
   Crop,
   Highlighter,
+  SlidersHorizontal,
   Layers,
   Minus,
   MoreVertical,
   Pencil,
   Plus,
+  RotateCcw,
   Scan,
   Trash2,
   X,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import type { ImageElement, LaybelElement, TextElement } from "@/types";
+import type {
+  CanvasSize,
+  ImageElement,
+  LayerElement,
+  TextElement,
+} from "@/types";
 import { Button } from "@/components/ui/button";
+import { LabeledSlider } from "@/components/panels/primitives";
+import { fitWithPadding, paddingOf } from "@/lib/imageFit";
 import { cn } from "@/lib/utils";
 
 /* ------------------------------------------------------------------------------ */
 
 interface SelectionToolbarProps {
-  element: LaybelElement;
+  element: LayerElement;
+  canvas: CanvasSize;
   position: { x: number; y: number };
+  cropping: boolean;
+  onCropStart: () => void;
+  onCropApply: () => void;
+  onCropReset: () => void;
+  onCropCancel: () => void;
+  onImageChange: (patch: Partial<ImageElement>) => void;
+  onHighlight: () => void;
+  onEdit: () => void;
   moreOpen: boolean;
   onMoreOpenChange: (open: boolean) => void;
   onDelete: () => void;
@@ -45,9 +65,11 @@ const ToolbarButton = ({
   children,
   onClick,
   active,
+  disabled,
   className,
 }: {
   label: string;
+  disabled?: boolean;
   children: ReactNode;
   onClick?: () => void;
   active?: boolean;
@@ -58,6 +80,7 @@ const ToolbarButton = ({
     variant="icon"
     size="icon"
     aria-label={label}
+    disabled={disabled}
     title={label}
     onMouseDown={(event) => event.preventDefault()}
     onClick={onClick}
@@ -118,8 +141,31 @@ const MoreMenu = ({
   </div>
 );
 
+const CropToolbar = ({
+  onCropApply,
+  onCropReset,
+  onCropCancel,
+}: SelectionToolbarProps) => (
+  <div className="flex w-fit items-center gap-2.5">
+    <ToolbarButton label="Apply crop" onClick={onCropApply}>
+      <Check className="h-3.5 w-3.5" /> Apply
+    </ToolbarButton>
+    <ToolbarButton label="Show the whole image" onClick={onCropReset}>
+      <RotateCcw className="h-3.5 w-3.5" /> Reset
+    </ToolbarButton>
+    <ToolbarButton label="Cancel crop" onClick={onCropCancel}>
+      <X className="h-3.5 w-3.5" /> Cancel
+    </ToolbarButton>
+  </div>
+);
+
 const ImageToolbar = ({
   element,
+  canvas,
+  onCropStart,
+  onImageChange,
+  onHighlight,
+  onEdit,
   moreOpen,
   onMoreOpenChange,
   onDelete,
@@ -128,20 +174,51 @@ const ImageToolbar = ({
   onLayerBackward,
 }: SelectionToolbarProps) => {
   const image = element as ImageElement;
-
+  const [paddingOpen, setPaddingOpen] = useState(false);
+  // A slot decides an image's size, so padding has nothing to change.
+  const inLayout = useEditor((s) => !!s.layout?.slots.some((slot) => slot.id === image.id));
   return (
     <div className="w-fit flex items-center gap-2.5">
-      <ToolbarButton label="Crop">
+      <ToolbarButton label="Crop" onClick={onCropStart}>
         <Crop className="h-3.5 w-3.5" /> Crop
       </ToolbarButton>
 
-      <ToolbarButton label="Highlight">
+      <ToolbarButton label="Edit" onClick={onEdit}>
+        <SlidersHorizontal className="h-3.5 w-3.5" /> Edit
+      </ToolbarButton>
+
+      <ToolbarButton label="Highlight" onClick={onHighlight}>
         <Highlighter className="h-3.5 w-3.5" /> Highlight
       </ToolbarButton>
 
-      <ToolbarButton label="Padding" active={image.deviceFrame != null}>
-        <Scan className="h-3.5 w-3.5" /> Padding
-      </ToolbarButton>
+      {!inLayout && (
+        <div className="relative">
+          <ToolbarButton
+            label="Padding"
+            active={paddingOpen}
+            onClick={() => setPaddingOpen(!paddingOpen)}
+          >
+            <Scan className="h-3.5 w-3.5" /> Padding
+          </ToolbarButton>
+          {paddingOpen && (
+            <div className="absolute left-0 top-[calc(100%+10px)] z-10 w-56 rounded-md border border-hairline-strong bg-panel p-3 shadow-[0_18px_50px_rgba(0,0,0,0.55)]">
+              <LabeledSlider
+                label="Padding"
+                unit="%"
+                min={0}
+                max={45}
+                value={paddingOf(image, canvas)}
+                onChange={(percent) =>
+                  onImageChange(fitWithPadding(image, canvas, percent))
+                }
+              />
+              <p className="mb-0 mt-2 text-[11px] leading-normal text-text-faint">
+                Centres the image with this gap to the canvas edge.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       <ToolbarButton label="Delete" onClick={onDelete}>
         <Trash2 className="h-3.5 w-3.5" /> Delete
@@ -307,7 +384,9 @@ export const SelectionToolbar = (props: SelectionToolbarProps) => {
       onMouseDown={(event) => event.stopPropagation()}
       onClick={(event) => event.stopPropagation()}
     >
-      {element.type === "image" ? (
+      {props.cropping ? (
+        <CropToolbar {...props} />
+      ) : element.type === "image" ? (
         <ImageToolbar {...props} />
       ) : (
         <TextToolbar {...props} />

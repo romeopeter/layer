@@ -9,11 +9,12 @@ dist-ssr
 .claude*
 
 learn/
-CLAUDE.md
-AGENTS.md
 p-readme.md
 SKILLS
 .env
+*.tsbuildinfo
+.agents-skills/settings.local.json
 todo.md
 implementation-phase-1.md
 /src/styles/design.html
+split.md

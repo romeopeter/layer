@@ -1,18 +1,25 @@
 import { useRef, useState } from "react";
-import { LayoutDashboard, Upload } from "lucide-react";
+import { Upload } from "lucide-react";
 import { useEditor } from "@/store/editor";
+import { cn } from "@/lib/utils";
 import { fileToDataURL } from "@/lib/importers";
+import { ScreenshotButton } from "./ScreenshotButton";
+import { StockImages } from "./StockImages";
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  PanelTitle,
   SectionLabel,
   LabeledSlider,
   ColorRow,
   Linebreak,
 } from "./primitives";
 import { PatternPanel } from "./background/PatternPanel";
+import { BackdropPanel } from "./background/BackdropPanel";
+import { ShuffleRow } from "./background/ShuffleRow";
+import { SavedBackgrounds } from "./background/SavedBackgrounds";
+import { EffectsControls } from "./background/EffectsControls";
+import { choiceClass } from "./choice";
 
 const SWATCHES = [
   "#6E5BFF",
@@ -41,7 +48,7 @@ const GRADIENTS = [
 export const BackgroundPanel = () => {
   const bg = useEditor((s) => s.background);
   const setBg = useEditor((s) => s.setBackground);
-  const [tab, setTab] = useState("Settings");
+  const [tab, setTab] = useState("effects");
   const fileRef = useRef<HTMLInputElement>(null);
 
   const onUploadImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -54,24 +61,21 @@ export const BackgroundPanel = () => {
 
   return (
     <div className="flex flex-col gap-4 px-4 pb-6 pt-4">
-      <PanelTitle>
-        <div className="flex items-center gap-1">
-          <span>BACKGROUND</span> <LayoutDashboard className="h-4.5 w-4.5" />
-        </div>
-      </PanelTitle>
 
       <div className="w-full max-w-full space-y-2.5">
         <SectionLabel>TYPE</SectionLabel>
+        {/* Five types only fit with tighter padding than the usual two or three. */}
         <ToggleGroup
           type="single"
           value={bg.mode}
           onValueChange={(v) => v && setBg({ mode: v as typeof bg.mode })}
           className="w-full"
         >
-          <ToggleGroupItem value="solid" className="cursor-pointer">Solid</ToggleGroupItem>
-          <ToggleGroupItem value="gradient" className="cursor-pointer">Gradient</ToggleGroupItem>
-          <ToggleGroupItem value="image" className="cursor-pointer">Image</ToggleGroupItem>
-          <ToggleGroupItem value="pattern" className="cursor-pointer">Pattern</ToggleGroupItem>
+          <ToggleGroupItem value="solid" className="cursor-pointer px-1">Solid</ToggleGroupItem>
+          <ToggleGroupItem value="gradient" className="cursor-pointer px-1">Gradient</ToggleGroupItem>
+          <ToggleGroupItem value="image" className="cursor-pointer px-1">Image</ToggleGroupItem>
+          <ToggleGroupItem value="pattern" className="cursor-pointer px-1">Pattern</ToggleGroupItem>
+          <ToggleGroupItem value="abstract" className="cursor-pointer px-1">Abstract</ToggleGroupItem>
         </ToggleGroup>
       </div>
 
@@ -89,13 +93,18 @@ export const BackgroundPanel = () => {
                     key={s}
                     type="button"
                     aria-label={s}
+                    aria-pressed={bg.mode === "solid" && bg.color.toLowerCase() === s.toLowerCase()}
                     onClick={() => setBg({ mode: "solid", color: s })}
-                    className="aspect-square cursor-pointer rounded-md border border-hairline transition-transform hover:scale-110 hover:border-p-300"
+                    className={cn(
+                      "aspect-square cursor-pointer rounded-md border transition-colors",
+                      choiceClass(bg.mode === "solid" && bg.color.toLowerCase() === s.toLowerCase()),
+                    )}
                     style={{ background: s }}
                   />
                 ))}
               </div>
             </div>
+            <ShuffleRow mode="solid" />
           </div>
         )}
 
@@ -143,7 +152,11 @@ export const BackgroundPanel = () => {
                         gradient: { ...g, angle: 135 },
                       })
                     }
-                    className="aspect-square cursor-pointer rounded-md border border-hairline transition-transform hover:scale-110 hover:border-p-300"
+                    aria-pressed={bg.mode === "gradient" && bg.gradient.from === g.from && bg.gradient.to === g.to}
+                    className={cn(
+                      "aspect-square cursor-pointer rounded-md border transition-colors",
+                      choiceClass(bg.mode === "gradient" && bg.gradient.from === g.from && bg.gradient.to === g.to),
+                    )}
                     style={{
                       background: `linear-gradient(135deg, ${g.from}, ${g.to})`,
                     }}
@@ -151,6 +164,7 @@ export const BackgroundPanel = () => {
                 ))}
               </div>
             </div>
+            <ShuffleRow mode="gradient" />
           </div>
         )}
 
@@ -173,40 +187,40 @@ export const BackgroundPanel = () => {
               onChange={onUploadImage}
               aria-label="Upload background image"
             />
-            {bg.imageSrc && (
-              <>
-                <LabeledSlider
-                  label="BLUR"
-                  unit="px"
-                  max={40}
-                  value={bg.imageBlur}
-                  onChange={(v) => setBg({ imageBlur: v })}
-                />
-                <LabeledSlider
-                  label="OPACITY"
-                  unit="%"
-                  max={100}
-                  value={Math.round(bg.imageOpacity * 100)}
-                  onChange={(v) => setBg({ imageOpacity: v / 100 })}
-                />
-              </>
-            )}
+            <ScreenshotButton
+              onCapture={async (blob) =>
+                setBg({ mode: "image", imageSrc: await fileToDataURL(blob) })
+              }
+            />
+            <StockImages
+              onPick={async (blob) =>
+                setBg({ mode: "image", imageSrc: await fileToDataURL(blob) })
+              }
+            />
           </>
         )}
 
         {bg.mode === "pattern" && <PatternPanel />}
+        {bg.mode === "abstract" && <BackdropPanel />}
       </div>
 
       <Linebreak />
 
-      <Tabs value={tab} onValueChange={setTab}>
-        <TabsList >
-          {/* <TabsTrigger value="Saved">Saved</TabsTrigger> */}
-          <TabsTrigger value="Settings" disabled className="disabled:cursor-not-allowed">
-            Settings
+      <Tabs value={tab} onValueChange={setTab} className="space-y-3">
+        <TabsList>
+          <TabsTrigger value="saved" className="cursor-pointer">
+            Saved
           </TabsTrigger>
-          <TabsTrigger value="Effects" className="cursor-pointer" defaultChecked>Effects</TabsTrigger>
+          <TabsTrigger value="effects" className="cursor-pointer">
+            Effects
+          </TabsTrigger>
         </TabsList>
+        <TabsContent value="saved">
+          <SavedBackgrounds />
+        </TabsContent>
+        <TabsContent value="effects">
+          <EffectsControls />
+        </TabsContent>
       </Tabs>
     </div>
   );

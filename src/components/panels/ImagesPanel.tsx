@@ -1,30 +1,31 @@
 import { useRef } from "react";
-import { Camera, Image as ImageIcon, Twitter, Upload } from "lucide-react";
+import { Image as Upload } from "lucide-react";
 import { useEditor } from "@/store/editor";
 import { Button } from "@/components/ui/button";
 import { importImageFile } from "@/lib/importers";
-import { PanelHelp, PanelTitle, SectionLabel, Linebreak } from "./primitives";
+import { ScreenshotButton } from "./ScreenshotButton";
+import { StockImages } from "./StockImages";
+import { PanelHelp, SectionLabel, Linebreak } from "./primitives";
 
 export const ImagesPanel = () => {
   const fileRef = useRef<HTMLInputElement>(null);
   const addImage = useEditor((s) => s.addImage);
   const uploadedImages = useEditor((s) => s.uploadedImages);
 
+  // The area was chosen before it got here, so it goes on as it is.
+  const onScreenshot = (blob: Blob) => importImageFile(blob, addImage);
+
   const onPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    await importImageFile(file, addImage);
-    e.target.value = "";
+    const input = e.target;
+    for (const file of Array.from(input.files ?? [])) {
+      await importImageFile(file, addImage);
+    }
+    input.value = "";
   };
 
   return (
     <div className="flex flex-col gap-4 px-4 pb-6 pt-4">
       <div className="flex flex-col gap-2">
-        <PanelTitle>
-          <div className="flex items-center gap-1">
-            <span>IMAGES</span> <ImageIcon className="h-4.5 w-4.5" />
-          </div>
-        </PanelTitle>
 
         <Button
           variant="primary"
@@ -39,19 +40,18 @@ export const ImagesPanel = () => {
           ref={fileRef}
           type="file"
           accept="image/png,image/jpeg,image/webp,image/svg+xml"
+          multiple
           className="hidden"
           onChange={onPick}
           aria-label="Upload image to canvas"
         />
 
-        <Button variant="outline" size="block" disabled>
-          <Camera className="h-3 w-3" /> Screenshot website
-        </Button>
-
-        <Button variant="outline" size="block" disabled>
-          <Twitter className="h-3 w-3" /> Import tweet
-        </Button>
+        <ScreenshotButton onCapture={onScreenshot} />
       </div>
+
+      <Linebreak />
+
+      <StockImages onPick={(blob) => importImageFile(blob, addImage)} />
 
       <Linebreak />
 
@@ -71,7 +71,7 @@ export const ImagesPanel = () => {
                   key={image.id}
                   type="button"
                   aria-label="Add uploaded image to canvas"
-                  className="aspect-square rounded-md border border-hairline bg-canvas bg-cover bg-center transition-colors hover:border-p-300"
+                  className="aspect-square rounded-md border border-hairline bg-canvas bg-cover bg-center transition-colors hover:border-secondary"
                   style={{ backgroundImage: `url(${image.src})` }}
                   onClick={() =>
                     addImage(image.src, image.naturalWidth, image.naturalHeight)

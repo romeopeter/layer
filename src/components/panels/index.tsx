@@ -1,30 +1,24 @@
-import type { Tool } from "../../store/editor";
+import { useEditor, type Tool } from "../../store/editor";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { groupOf } from "../railTools";
 import { UploadsPanel } from "./UploadsPanel";
 import { BackgroundPanel } from "./BackgroundPanel";
 import { MockupPanel } from "./MockupPanel";
-import { AnnotationPanel } from "./AnnotationPanel";
-import { HeaderPanel } from "./HeaderPanel";
-import { PositionPanel } from "./PositionPanel";
-import { ShadowPanel } from "./ShadowPanel";
-import { BorderPanel } from "./BorderPanel";
+import { ElementsPanel, LayersPanel } from "./ElementsPanel";
+import { TextAddPanel } from "./TextControls";
 import { WatermarkPanel } from "./WatermarkPanel";
-import { ThreeDPanel } from "./ThreeDPanel";
 import { ImagesPanel } from "./ImagesPanel";
-import {
-  AiPanel,
-  TemplatesPanel,
-  LayoutPanel,
-  BrandsPanel,
-  MotionPanel,
-  CustomizePanel,
-} from "./StubPanels";
+import { LayoutPanel } from "./LayoutPanel";
+import { TemplatesPanel } from "./TemplatesPanel";
+import { AiPanel, BrandsPanel, MotionPanel, CustomizePanel } from "./StubPanels";
+import { PanelTitle } from "./primitives";
 
 interface Props {
   activeTool: Tool;
   onOpenCustomizeModal: () => void;
 }
 
-export const PanelHost = ({ activeTool, onOpenCustomizeModal }: Props) => {
+const View = ({ activeTool, onOpenCustomizeModal }: Props) => {
   switch (activeTool) {
     case "ai":
       return <AiPanel />;
@@ -33,23 +27,17 @@ export const PanelHost = ({ activeTool, onOpenCustomizeModal }: Props) => {
     case "images":
       return <ImagesPanel />;
     case "annotation":
-      return <AnnotationPanel />;
+      return <ElementsPanel />;
+    case "header":
+      return <TextAddPanel />;
     case "background":
       return <BackgroundPanel />;
-    case "mockup":
-      return <MockupPanel />;
-    case "position":
-      return <PositionPanel />;
-    case "3d":
-      return <ThreeDPanel />;
-    case "shadow":
-      return <ShadowPanel />;
-    case "border":
-      return <BorderPanel />;
     case "layout":
       return <LayoutPanel />;
-    case "header":
-      return <HeaderPanel />;
+    case "mockup":
+      return <MockupPanel />;
+    case "layers":
+      return <LayersPanel />;
     case "watermark":
       return <WatermarkPanel />;
     case "brands":
@@ -61,4 +49,42 @@ export const PanelHost = ({ activeTool, onOpenCustomizeModal }: Props) => {
     default:
       return <UploadsPanel />;
   }
+};
+
+/**
+ * The left panel: the rail group's name and tabs, then the tab's view. Each view
+ * is about adding to or arranging the design; a selected object's own settings
+ * are in the Properties panel on the right.
+ */
+export const PanelHost = (props: Props) => {
+  const setActiveTool = useEditor((s) => s.setActiveTool);
+  const group = groupOf(props.activeTool);
+
+  return (
+    <div className="flex h-full flex-col">
+      {group && (
+        <div className="space-y-2.5 border-b border-hairline px-4 pb-3 pt-4">
+          <PanelTitle className="mb-0">{group.label.toUpperCase()}</PanelTitle>
+          {group.tabs.length > 1 && (
+            <ToggleGroup
+              type="single"
+              aria-label={`${group.label} views`}
+              value={props.activeTool}
+              onValueChange={(value) => value && setActiveTool(value as Tool)}
+              className="w-full"
+            >
+              {group.tabs.map((tab) => (
+                <ToggleGroupItem key={tab.key} value={tab.key} className="cursor-pointer px-1">
+                  {tab.label}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          )}
+        </div>
+      )}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <View {...props} />
+      </div>
+    </div>
+  );
 };

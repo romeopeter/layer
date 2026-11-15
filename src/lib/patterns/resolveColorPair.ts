@@ -1,11 +1,11 @@
-import type { PatternColorPair } from "@/types/pattern";
+import type { PatternColorPair, PatternConfig } from "@/types/pattern";
 import { CURATED_PATTERN_PAIRS } from "@/data/curatedPatternPairs";
 import { deriveBrandPatternPairs } from "./deriveBrandPatternPairs";
 
 const FALLBACK_PAIR = CURATED_PATTERN_PAIRS[0];
 
 /**
- * `.laybel` files store only the pair id, so hexes aren't duplicated into every
+ * `.layer` files store only the pair id, so hexes aren't duplicated into every
  * project and custom pairs stay editable in one place. Resolution happens at
  * render time against curated presets, brand-derived pairs, and the user's
  * custom pairs.
@@ -25,3 +25,12 @@ export const resolveColorPair = (
   customPairs.find((p) => p.id === colorPairId) ??
   deriveBrandPatternPairs().find((p) => p.id === colorPairId) ??
   FALLBACK_PAIR;
+
+/** The colours a pattern draws with: Shuffle's own, or its swatch's. */
+export const patternPairOf = (
+  pattern: PatternConfig,
+  customPairs: PatternColorPair[] = [],
+): PatternColorPair =>
+  pattern.colors
+    ? { id: "shuffled", source: "custom", ...pattern.colors }
+    : resolveColorPair(pattern.colorPairId, customPairs);

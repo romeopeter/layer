@@ -1,15 +1,20 @@
 import { useEffect, useState, useCallback } from "react";
 import { Upload, Minus, Plus, Delete, Command } from "lucide-react";
-import { useEditor, ZOOM_MAX, ZOOM_MIN } from "@/store/editor";
+import { DEFAULT_BACKGROUND, useEditor, ZOOM_MAX, ZOOM_MIN } from "@/store/editor";
+import { loadSavedBackgrounds } from "@/lib/host";
+import { normaliseSavedBackgrounds } from "@/lib/background/normalise";
 import { TopBar } from "@/components/TopBar";
 import { LeftRail } from "@/components/LeftRail";
 import { PanelHost } from "@/components/panels";
+import { PropertiesPanel } from "@/components/properties/PropertiesPanel";
 import { CanvasStage } from "@/components/canvas/CanvasStage";
 import { GridControl } from "@/components/canvas/GridControl";
 import { SocialPreviewModal } from "@/components/SocialPreviewModal";
 import { CustomizeSidebarModal } from "@/components/CustomizeSidebarModal";
 import { KeyBadge } from "@/components/ui/key-badge";
 import { importImageFile } from "@/lib/importers";
+import { arrangeLayout, slotAt } from "@/lib/layouts";
+import { getStage } from "@/components/canvas/stageRef";
 import {
   exportCanvas,
   copyCanvasToClipboard,
@@ -18,18 +23,41 @@ import {
 
 /* ------------------------------------------------------------------------------------------ */
 
+/** Which layout slot a screen position is over, if any. */
+const layoutSlotAt = (clientX: number, clientY: number) => {
+  const { layout, elements, canvas } = useEditor.getState();
+  const stage = getStage();
+  if (!layout || !stage) return null;
+  const box = stage.container().getBoundingClientRect();
+  const scale = stage.scaleX();
+  return slotAt(
+    arrangeLayout(layout, elements, canvas),
+    (clientX - box.left) / scale,
+    (clientY - box.top) / scale,
+  );
+};
+
 export const App = () => {
   const activeTool = useEditor((s) => s.activeTool);
+  const leftPanelOpen = useEditor((s) => s.leftPanelOpen);
   const zoom = useEditor((s) => s.zoom);
   const setZoom = useEditor((s) => s.setZoom);
   const addImage = useEditor((s) => s.addImage);
   const elements = useEditor((s) => s.elements);
+  const markTool = useEditor((s) => s.markTool);
 
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
   const [customizeOpen, setCustomizeOpen] = useState(false);
   const [hiddenTools, setHiddenTools] = useState<Record<string, boolean>>({});
   const [dragOver, setDragOver] = useState(false);
+
+  // Backgrounds saved in earlier sessions, from the desktop's file.
+  useEffect(() => {
+    void loadSavedBackgrounds().then((list) =>
+      useEditor.getState().setSavedBackgrounds(normaliseSavedBackgrounds(list, DEFAULT_BACKGROUND)),
+    );
+  }, []);
 
   const toggleVisible = useCallback((k: string) => {
     setHiddenTools((h) => ({ ...h, [k]: !h[k] }));
@@ -45,12 +73,24 @@ export const App = () => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
 
+      // A colour swatch keeps focus after you pick from it, but takes no typing,
+      // so it mustn't swallow shortcuts the way a text field should.
       const inField =
         !!target &&
-        (target.tagName === "INPUT" || target.tagName === "TEXTAREA");
+        (target.tagName === "TEXTAREA" ||
+          (target.tagName === "INPUT" &&
+            (target as HTMLInputElement).type !== "color"));
       if (inField) return;
 
-      if ((e.metaKey || e.ctrlKey) && e.key === "e") {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        const { undo, redo } = useEditor.getState();
+        if (e.shiftKey) redo();
+        else undo();
+      } else if ((e.metaKey || e.ctrlKey) && e.key === "y") {
+        e.preventDefault();
+        useEditor.getState().redo();
+      } else if ((e.metaKey || e.ctrlKey) && e.key === "e") {
         e.preventDefault();
         exportCanvas("png", 2);
       } else if ((e.metaKey || e.ctrlKey) && e.key === "c") {
@@ -81,8 +121,17 @@ export const App = () => {
   const onDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
+    // The first image goes in the slot it was dropped on; the rest fill what's free.
+    let slot = layoutSlotAt(e.clientX, e.clientY);
     for (const file of Array.from(e.dataTransfer.files)) {
-      if (file.type.startsWith("image/")) await importImageFile(file, addImage);
+      if (!file.type.startsWith("image/")) continue;
+      const chosen = slot;
+      await importImageFile(file, (src, width, height) =>
+        chosen === null
+          ? addImage(src, width, height)
+          : useEditor.getState().fillSlot(chosen, src, width, height),
+      );
+      slot = null;
     }
   };
 
@@ -98,18 +147,22 @@ export const App = () => {
       <div className="flex min-h-0 flex-1">
         <LeftRail hiddenTools={hiddenTools} />
 
-        <aside className="z-10 w-72.5 shrink-0 overflow-y-auto border-r border-hairline bg-panel scrollbar-thin">
-          <PanelHost
-            activeTool={activeTool}
-            onOpenCustomizeModal={() => setCustomizeOpen(true)}
-          />
-        </aside>
+        {leftPanelOpen && (
+          <aside aria-label="Panel" className="z-10 w-72.5 shrink-0 overflow-hidden border-r border-hairline bg-panel">
+            <PanelHost
+              activeTool={activeTool}
+              onOpenCustomizeModal={() => setCustomizeOpen(true)}
+            />
+          </aside>
+        )}
 
         <main className="relative min-w-0 flex-1 overflow-hidden bg-canvas">
           <div className="size-full bg-dot-grid absolute inset-0 bottom-20 flex items-center justify-center">
             <CanvasStage />
 
-            {elements.length === 0 && (
+            {/* Out of the way once a tool is armed: its icon takes pointer events,
+                which would swallow a click or drag starting on it. */}
+            {elements.length === 0 && !markTool && (
               <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2.5 text-text-muted">
                 <div className="pointer-events-auto flex h-14 w-14 items-center justify-center rounded-full bg-p-50 text-p-600">
                   <Upload className="h-5.5 w-5.5" />
@@ -192,6 +245,7 @@ export const App = () => {
             </div>
           </div>
         </main>
+        <PropertiesPanel />
       </div>
 
       <SocialPreviewModal

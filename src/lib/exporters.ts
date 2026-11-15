@@ -1,11 +1,16 @@
 import Konva from "konva";
-import { getStage } from "../components/canvas/stageRef";
+import { BACKGROUND_LAYER_NAME, getStage } from "../components/canvas/stageRef";
 import { useEditor } from "../store/editor";
-import { openLaybelFile } from "./importers";
-import { isImageTiltActive } from "./tilt";
+import { saveExport, saveProject } from "./host";
+import { openLayerFile } from "./importers";
 import { prepareExportTiles } from "./export/prepareExportTiles";
+import { prepareExportBackdrop } from "./export/prepareExportBackdrop";
 import { GRID_LAYER_NAME } from "../components/canvas/GridOverlay";
 import { SNAP_GUIDES_LAYER_NAME } from "../components/canvas/SnapGuides";
+import { MARK_DRAFT_LAYER_NAME } from "../components/canvas/MarkDraft";
+import { MARK_HANDLES_LAYER_NAME } from "../components/canvas/MarkHandles";
+import { CROP_LAYER_NAME } from "../components/canvas/CropOverlay";
+import { LAYOUT_SLOTS_LAYER_NAME } from "../components/canvas/LayoutOverlay";
 
 const dataURLtoBlob = (dataUrl: string): Blob => {
   const [meta, b64] = dataUrl.split(",");
@@ -16,24 +21,6 @@ const dataURLtoBlob = (dataUrl: string): Blob => {
   return new Blob([buf], { type: mime });
 };
 
-const downloadBlob = (blob: Blob, filename: string) => {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 100);
-};
-
-const loadHtmlImage = (src: string): Promise<HTMLImageElement> =>
-  new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = reject;
-    img.src = src;
-  });
 
 /**
  * Hide everything that is editor chrome rather than artwork, run the capture,
@@ -43,12 +30,18 @@ const loadHtmlImage = (src: string): Promise<HTMLImageElement> =>
  */
 const withOverlaysHidden = async <T,>(
   stage: Konva.Stage,
+  options: { withoutBackground?: boolean },
   fn: () => Promise<T>,
 ) => {
   const overlays = [
+    ...(options.withoutBackground ? stage.find(`.${BACKGROUND_LAYER_NAME}`) : []),
     ...stage.find("Transformer"),
     ...stage.find(`.${GRID_LAYER_NAME}`),
     ...stage.find(`.${SNAP_GUIDES_LAYER_NAME}`),
+    ...stage.find(`.${MARK_DRAFT_LAYER_NAME}`),
+    ...stage.find(`.${MARK_HANDLES_LAYER_NAME}`),
+    ...stage.find(`.${CROP_LAYER_NAME}`),
+    ...stage.find(`.${LAYOUT_SLOTS_LAYER_NAME}`),
   ];
   const visible = overlays.map((node) => node.visible());
   overlays.forEach((node) => node.visible(false));
@@ -61,78 +54,25 @@ const withOverlaysHidden = async <T,>(
   }
 };
 
-const renderTiltedImageIntoStage = async (stage: Konva.Stage) => {
-  const { elements, selectedIds } = useEditor.getState();
-  const selectedId = selectedIds.length === 1 ? selectedIds[0] : null;
-  const image = elements.find((el) => el.id === selectedId);
-
-  if (
-    !image ||
-    image.type !== "image" ||
-    image.deviceFrame ||
-    !isImageTiltActive(image.transform)
-  ) {
-    return null;
-  }
-
-  const overlay = document.querySelector<HTMLElement>(
-    `[data-tilted-image-id="${image.id}"]`,
-  );
-  const originalNode = stage.findOne(`#${image.id}`);
-  const layer = originalNode?.getLayer();
-
-  if (!overlay || !originalNode || !layer) return null;
-
-  try {
-    const domtoimage = await import("dom-to-image-more");
-    const dataUrl = await domtoimage.toPng(overlay, {
-      width: overlay.offsetWidth,
-      height: overlay.offsetHeight,
-      bgcolor: "transparent",
-      cacheBust: true,
-    });
-    const flatImage = await loadHtmlImage(dataUrl);
-    const temporaryNode = new Konva.Image({
-      image: flatImage,
-      x: image.x,
-      y: image.y,
-      width: image.width,
-      height: image.height,
-      rotation: image.rotation,
-      listening: false,
-    });
-
-    layer.add(temporaryNode);
-    temporaryNode.zIndex(originalNode.getZIndex());
-    layer.batchDraw();
-
-    return () => {
-      temporaryNode.destroy();
-      layer.batchDraw();
-    };
-  } catch (error) {
-    throw new Error(
-      `Failed to rasterize CSS 3D image ${image.id}: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-      { cause: error },
-    );
-  }
-};
+export interface ExportOptions {
+  /** Leaves the background out, so PNG and WebP come out see-through. */
+  withoutBackground?: boolean;
+}
 
 export const renderCanvasDataURL = (
   format: "png" | "jpg" | "webp" = "png",
-  pixelRatio = 2
+  pixelRatio = 2,
+  options: ExportOptions = {},
 ): Promise<string | null> => {
   const stage = getStage();
   if (!stage) return Promise.resolve(null);
 
-  return withOverlaysHidden(stage, async () => {
-    const cleanupTiltedImage = await renderTiltedImageIntoStage(stage);
+  return withOverlaysHidden(stage, options, async () => {
     // The stage is scaled to fit, and the pixelRatio below compensates for that,
     // so the background pattern is rasterized at `pixelRatio` device pixels per
     // canvas unit regardless of the current zoom.
     const cleanupPatternTiles = await prepareExportTiles(stage, pixelRatio);
+    const cleanupBackdrop = await prepareExportBackdrop(stage, pixelRatio);
 
     try {
       // Stage is currently scaled to fit; export uses the canvas's intrinsic resolution
@@ -151,43 +91,48 @@ export const renderCanvasDataURL = (
         height: canvas.height * scaleY,
       });
     } finally {
-      cleanupTiltedImage?.();
       cleanupPatternTiles?.();
+      cleanupBackdrop?.();
     }
   });
 };
 
 export const exportCanvas = async (
   format: "png" | "jpg" | "webp" = "png",
-  pixelRatio = 2
+  pixelRatio = 2,
+  options: ExportOptions = {},
 ) => {
-  const dataUrl = await renderCanvasDataURL(format, pixelRatio);
+  const dataUrl = await renderCanvasDataURL(format, pixelRatio, options);
   if (!dataUrl) return;
   const ext = format === "jpg" ? "jpg" : format;
   const blob = dataURLtoBlob(dataUrl);
-  downloadBlob(blob, `laybel-design-${Date.now()}.${ext}`);
+  await saveExport(blob, `layer-design-${Date.now()}.${ext}`);
 };
 
-export const copyCanvasToClipboard = async () => {
-  const dataUrl = await renderCanvasDataURL("png", 2);
-  if (!dataUrl) return;
-  const blob = dataURLtoBlob(dataUrl);
+export const copyCanvasToClipboard = async (options: ExportOptions = {}) => {
+  const png = renderCanvasDataURL("png", 2, options).then((dataUrl) => {
+    if (!dataUrl) throw new Error("There's no canvas to copy.");
+    return dataURLtoBlob(dataUrl);
+  });
   try {
-    await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+    // Handed over unfinished: WebKit refuses a write that starts after an await,
+    // because it no longer counts as part of the user's key press or click.
+    await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
   } catch {
     // Fallback: download
-    downloadBlob(blob, `laybel-design-${Date.now()}.png`);
+    const blob = await png.catch(() => null);
+    if (blob) await saveExport(blob, `layer-design-${Date.now()}.png`);
   }
 };
 
-export const downloadProject = () => {
+export const downloadProject = async () => {
   const project = useEditor.getState().toProject();
-  const blob = new Blob([JSON.stringify(project, null, 2)], {
-    type: "application/json",
-  });
-  downloadBlob(blob, `laybel-project-${Date.now()}.laybel`);
+  await saveProject(
+    JSON.stringify(project, null, 2),
+    `layer-project-${Date.now()}.layer`,
+  );
 };
 
 export const openProjectFile = async () => {
-  await openLaybelFile();
+  await openLayerFile();
 };

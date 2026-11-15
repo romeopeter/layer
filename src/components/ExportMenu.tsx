@@ -36,7 +36,11 @@ const Row = ({ icon, label, right, onClick, disabled }: RowProps) => (
 export const ExportMenu = ({ onClose }: Props) => {
   const [adv, setAdv] = useState(false);
   const [scale, setScale] = useState(2);
-  const isPro = useEditor((s) => s.isPro);
+  const showBadge = useEditor((s) => s.watermark.badge.show);
+  const setBadge = useEditor((s) => s.setBadge);
+  // For this export only: the background stays on the canvas.
+  const [withoutBackground, setWithoutBackground] = useState(false);
+  const options = { withoutBackground };
 
   const close = (fn: () => void | Promise<void>) => async () => {
     await fn();
@@ -49,36 +53,49 @@ export const ExportMenu = ({ onClose }: Props) => {
         EXPORT OPTIONS
       </div>
       <label className="flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-xs hover:bg-p-200/[0.06]">
-        <input type="checkbox" disabled={!isPro} className="accent-t-400" />
+        {/* The same switch as the Watermark panel's Show badge. */}
+        <input
+          type="checkbox"
+          checked={!showBadge}
+          onChange={(e) => setBadge({ show: !e.target.checked })}
+          className="accent-t-400"
+        />
         <span className="flex-1">Remove watermark</span>
-        {!isPro && <Badge variant="pro" size="sm" />}
       </label>
       <label className="flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-xs hover:bg-p-200/[0.06]">
-        <input type="checkbox" disabled={!isPro} className="accent-t-400" />
+        <input
+          type="checkbox"
+          checked={withoutBackground}
+          onChange={(e) => setWithoutBackground(e.target.checked)}
+          className="accent-t-400"
+        />
         <span className="flex-1">Remove background</span>
-        {!isPro && <Badge variant="pro" size="sm" />}
       </label>
+      {withoutBackground && (
+        <p className="px-2.5 pb-1 text-[10.5px] text-text-faint">PNG and WebP keep it see-through. JPG can't.</p>
+      )}
       <Separator className="my-1.5" />
       <Row icon={<Download className="h-3.5 w-3.5" />} label="Download PNG"
            right={<KeyBadge>⌘E</KeyBadge>}
-           onClick={close(() => exportCanvas("png", scale))} />
+           onClick={close(() => exportCanvas("png", scale, options))} />
       <Row icon={<Download className="h-3.5 w-3.5" />} label="Download JPG"
+           disabled={withoutBackground}
            onClick={close(() => exportCanvas("jpg", scale))} />
       <Row icon={<Download className="h-3.5 w-3.5" />} label="Download WebP"
-           onClick={close(() => exportCanvas("webp", scale))} />
+           onClick={close(() => exportCanvas("webp", scale, options))} />
       <Separator className="my-1.5" />
       <Row icon={<Film className="h-3.5 w-3.5" />} label="Download GIF"
-           right={<Badge variant="pro" size="sm" />} disabled />
+           right={<Badge variant="phase2" size="sm">PHASE 2</Badge>} disabled />
       <Row icon={<Film className="h-3.5 w-3.5" />} label="Download MP4"
-           right={<Badge variant="pro" size="sm" />} disabled />
+           right={<Badge variant="phase2" size="sm">PHASE 2</Badge>} disabled />
       <Separator className="my-1.5" />
       <Row icon={<Clipboard className="h-3.5 w-3.5" />} label="Copy to clipboard"
            right={<KeyBadge>⌘C</KeyBadge>}
-           onClick={close(copyCanvasToClipboard)} />
+           onClick={close(() => copyCanvasToClipboard(options))} />
       <Separator className="my-1.5" />
-      <Row icon={<Save className="h-3.5 w-3.5" />} label="Save project (.laybel)"
+      <Row icon={<Save className="h-3.5 w-3.5" />} label="Save project (.layer)"
            onClick={close(downloadProject)} />
-      <Row icon={<FolderOpen className="h-3.5 w-3.5" />} label="Open project (.laybel)"
+      <Row icon={<FolderOpen className="h-3.5 w-3.5" />} label="Open project (.layer)"
            onClick={close(openProjectFile)} />
       <button
         type="button"

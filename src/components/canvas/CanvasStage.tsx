@@ -1,26 +1,40 @@
-import { useEffect, useRef, useState } from "react";
-import { Stage, Layer, Transformer, Text as KText } from "react-konva";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Stage, Layer, Transformer } from "react-konva";
 import Konva from "konva";
 import { useEditor } from "../../store/editor";
 import { Background } from "./Background";
 import { ImageNode } from "./ImageNode";
 import { TextNode } from "./TextNode";
 import { ShapeNode } from "./ShapeNode";
-import { TiltedImageOverlay } from "./TiltedImageOverlay";
+import { LayoutDecorNodes, LayoutSlotsLayer } from "./LayoutOverlay";
+import { useLayoutDrag } from "./useLayoutDrag";
+import { usePictureDrag } from "./usePictureDrag";
 import { SelectionToolbar } from "./SelectionToolbar";
 import { GRID_LAYER_NAME, GridOverlay } from "./GridOverlay";
 import { SnapGuides, type SnapGuidesHandle } from "./SnapGuides";
+import { Watermarks } from "./Watermarks";
+import { revealSection } from "@/components/properties/revealSection";
+import { BACKGROUND_LAYER_NAME } from "./stageRef";
+import { MarkDraft, type MarkDraftHandle } from "./MarkDraft";
+import { MARK_HANDLES_LAYER_NAME, MarkHandles } from "./MarkHandles";
+import { TextEditor } from "./TextEditor";
+import { CROP_LAYER_NAME, CropOverlay, type CropOverlayHandle } from "./CropOverlay";
+import { boundsOf, CONTENT_LAYER_NAME, snapCandidatesFor } from "./snapCandidates";
+import { useMarkPlacement } from "./useMarkPlacement";
 import { setStage } from "./stageRef";
+import { arrangeLayout } from "@/lib/layouts";
 import {
-  buildCandidates,
   computeSnap,
+  resizeSnapResult,
+  snapPoint,
   SNAP_THRESHOLD_PX,
   type Bounds,
   type SnapCandidates,
 } from "@/lib/snapping";
 import { importImageFile } from "../../lib/importers";
-import type { ImageElement, LaybelElement, TextElement } from "@/types";
-import { isImageTiltActive } from "@/lib/tilt";
+import type { LayerElement, TextElement } from "@/types";
+import { MIN_FRAME_SIZE } from "@/lib/constants";
+import { FIXED_RATIO_SHAPES } from "@/lib/marks";
 
 /* ------------------------------------------------------------------------ */
 
@@ -35,29 +49,45 @@ const isTransformerTarget = (node: Konva.Node) => {
   return false;
 };
 
+const CORNER_ANCHORS = ["top-left", "top-right", "bottom-left", "bottom-right"];
+
+const ALL_ANCHORS = [
+  ...CORNER_ANCHORS,
+  "top-center",
+  "middle-left",
+  "middle-right",
+  "bottom-center",
+];
+
+/** Text has no height handles: its box is always as tall as its lines. */
+const TEXT_ANCHORS = [...CORNER_ANCHORS, "middle-left", "middle-right"];
+
+const MIN_TRANSFORM_SIZE = 8;
+
+/** Half of each toolbar's width, so it stays on the canvas above an edge element. */
+const TOOLBAR_HALF_WIDTH = { image: 235, text: 120 };
+
+/** The element a clicked node belongs to: nodes draw inside an element's group. */
+const elementIdOf = (node: Konva.Node, ids: Set<string>) => {
+  let current: Konva.Node | null = node;
+  while (current) {
+    if (ids.has(current.id())) return current.id();
+    current = current.getParent();
+  }
+  return null;
+};
+
 const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max);
 
-/**
- * Axis-aligned bounds in canvas coordinates.
- *
- * `getClientRect` is used rather than the element's stored x/y/width/height so
- * rotated elements align by the box you actually see. Shadow and stroke are
- * skipped so guides track the shape's geometry instead of its glow.
- */
-const boundsOf = (node: Konva.Node): Bounds => {
-  const rect = node.getClientRect({
-    relativeTo: node.getLayer() ?? undefined,
-    skipShadow: true,
-    skipStroke: true,
-  });
-  return {
-    minX: rect.x,
-    minY: rect.y,
-    maxX: rect.x + rect.width,
-    maxY: rect.y + rect.height,
-  };
+/** Whether a node is one of the document's elements, not the Transformer or an overlay. */
+const isElementNode = (node: Konva.Node) => {
+  const id = node.id();
+  return !!id && useEditor.getState().elements.some((el) => el.id === id);
 };
+
+/** Room kept around the canvas when it's fitted to its area, in screen pixels. */
+const FIT_PADDING = 40;
 
 export const CanvasStage = () => {
   // Store selectors
@@ -79,14 +109,26 @@ export const CanvasStage = () => {
   const grid = useEditor((s) => s.grid);
   const snapEnabled = useEditor((s) => s.snapEnabled);
   const watermark = useEditor((s) => s.watermark);
+  const markTool = useEditor((s) => s.markTool);
+  const editingId = useEditor((s) => s.editingId);
+  const cropId = useEditor((s) => s.cropId);
+  const setCropId = useEditor((s) => s.setCropId);
+  const layout = useEditor((s) => s.layout);
 
   // Refs for Konva stage, transformer, and container div
   const stageRef = useRef<Konva.Stage>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const tiltOverlayRef = useRef<HTMLDivElement>(null);
   const guidesRef = useRef<SnapGuidesHandle>(null);
+  const draftRef = useRef<MarkDraftHandle>(null);
+  const cropRef = useRef<CropOverlayHandle>(null);
+  const layoutFileRef = useRef<HTMLInputElement>(null);
+  const layoutFileSlot = useRef<number | null>(null);
+  const dropSlot = useLayoutDrag(stageRef);
+  usePictureDrag(stageRef);
+  const [draggingElement, setDraggingElement] = useState(false);
   const snapCandidates = useRef<SnapCandidates | null>(null);
+  const resizeSnap = useRef<{ candidates: SnapCandidates; start: Bounds } | null>(null);
   const [toolbarMoreOpenFor, setToolbarMoreOpenFor] = useState<string | null>(
     null,
   );
@@ -105,15 +147,15 @@ export const CanvasStage = () => {
   }));
 
   useEffect(() => {
+    // Measures the canvas area around the stage, not the stage's own wrapper: the
+    // wrapper takes its size from the canvas, so measuring it would feed back.
+    const area = () => wrapRef.current?.parentElement ?? null;
     const compute = () => {
-      const wrap = wrapRef.current;
-      if (!wrap) return;
+      const space = area();
+      if (!space) return;
 
-      // const availW = wrap.clientWidth - padding;
-      // const availH = wrap.clientHeight - padding - 80; // leave room for hints/timeline
-
-      const availW = 1400;
-      const availH = 950;
+      const availW = space.clientWidth - FIT_PADDING * 2;
+      const availH = space.clientHeight - FIT_PADDING * 2;
 
       // Guard against invalid dimensions - don't update if wrapper isn't sized yet
       if (availW <= 0 || availH <= 0) return;
@@ -129,22 +171,34 @@ export const CanvasStage = () => {
     };
 
     const requestObserver = new ResizeObserver(compute);
-    if (wrapRef.current) requestObserver.observe(wrapRef.current);
+    const space = area();
+    if (space) requestObserver.observe(space);
 
     return () => requestObserver.disconnect();
   }, [canvas.width, canvas.height, zoom]);
+
 
   // Attach transformer to selected nodes
   useEffect(() => {
     const stage = stageRef.current;
     const tr = transformerRef.current;
     if (!stage || !tr) return;
-    const nodes = selectedIds
-      .map((id) => stage.findOne(`#${id}`))
+    const nodes = elements
+      .filter(
+        (el) =>
+          selectedIds.includes(el.id) &&
+          !el.locked &&
+          !el.hidden &&
+          el.id !== editingId &&
+          el.id !== cropId &&
+          // Connectors reshape from their own end handles.
+          !(el.type === "shape" && el.connector),
+      )
+      .map((el) => stage.findOne(`#${el.id}`))
       .filter(Boolean) as Konva.Node[];
     tr.nodes(nodes);
     tr.getLayer()?.batchDraw();
-  }, [selectedIds, elements]);
+  }, [selectedIds, elements, editingId, cropId]);
 
   // Keyboard shortcuts: Delete/Backspace removes selected elements, Escape deselects
   useEffect(() => {
@@ -158,13 +212,28 @@ export const CanvasStage = () => {
         return;
       if ((e.key === "Delete" || e.key === "Backspace") && selectedIds.length) {
         e.preventDefault();
-        selectedIds.forEach(deleteElement);
+        useEditor
+          .getState()
+          .elements.filter((el) => selectedIds.includes(el.id) && !el.locked)
+          .forEach((el) => deleteElement(el.id));
       }
-      if (e.key === "Escape") selectElement(null);
+      if (e.key === "Enter" && useEditor.getState().cropId) {
+        e.preventDefault();
+        cropRef.current?.apply();
+      }
+      if (e.key === "Escape") {
+        // Esc backs out of crop first, leaving the image selected.
+        if (useEditor.getState().cropId) {
+          setCropId(null);
+          return;
+        }
+        selectElement(null);
+        useEditor.getState().setMarkTool(null);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedIds, deleteElement, selectElement]);
+  }, [selectedIds, deleteElement, selectElement, setCropId]);
 
   // Handle clipboard paste to import images
   useEffect(() => {
@@ -183,6 +252,8 @@ export const CanvasStage = () => {
     return () => window.removeEventListener("paste", onPaste);
   }, [addImage]);
 
+  const placement = useMarkPlacement(stageRef, draftRef, guidesRef, scale);
+
   // Deselect when clicking stage background or empty areas
   const onStagePointerDown = (
     e: Konva.KonvaEventObject<MouseEvent | TouchEvent>,
@@ -190,15 +261,18 @@ export const CanvasStage = () => {
     const target = e.target as Konva.Node;
 
     if (isTransformerTarget(target)) return;
+    if (target.getLayer()?.name() === MARK_HANDLES_LAYER_NAME) return;
+    // Crop mode ends with Apply or Cancel, not a stray click.
+    if (cropId || target.getLayer()?.name() === CROP_LAYER_NAME) return;
 
-    if (target === target.getStage()) {
+    // Select on press, not release, so one gesture can select and drag. Shift
+    // is left to the click handler, which toggles.
+    const id = elementIdOf(target, new Set(elements.map((el) => el.id)));
+    if (!id) {
       selectElement(null);
-      return;
+    } else if (!selectedIds.includes(id) && !e.evt.shiftKey) {
+      selectElement(id);
     }
-
-    // also deselect when clicking background rect
-    const id = target.id?.();
-    if (!id) selectElement(null);
   };
 
   /*
@@ -207,29 +281,19 @@ export const CanvasStage = () => {
     would be pure waste.
   */
   const onElementDragStart = (e: Konva.KonvaEventObject<DragEvent>) => {
+    if (!isElementNode(e.target)) return;
+    setDraggingElement(true);
     if (!snapEnabled) return;
 
-    const node = e.target;
-    const layer = node.getLayer();
-    if (!layer) return;
-
-    // Only real elements are snap targets — this filters out the Transformer
-    // and the watermark, which live in the same layer but carry no element id.
-    const elementIds = new Set(elements.map((el) => el.id));
-    const others = layer
-      .getChildren()
-      .filter((child) => {
-        const id = child.id();
-        return !!id && id !== node.id() && elementIds.has(id);
-      })
-      .map(boundsOf);
-
-    snapCandidates.current = buildCandidates(others, canvas);
+    const stage = e.target.getStage();
+    if (stage) snapCandidates.current = snapCandidatesFor(stage, e.target.id());
   };
 
   const onElementDragMove = (e: Konva.KonvaEventObject<DragEvent>) => {
     const candidates = snapCandidates.current;
-    if (!candidates) return;
+    // The Transformer fires drag events of its own as it follows the element. Snapping
+    // those would move the Transformer, and their empty guides would wipe the real ones.
+    if (!candidates || !isElementNode(e.target)) return;
 
     const node = e.target;
     // The threshold is in screen px, so it divides through the stage scale —
@@ -246,9 +310,48 @@ export const CanvasStage = () => {
     guidesRef.current?.show(guides);
   };
 
-  const onElementDragEnd = () => {
+  const onElementDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
+    if (!isElementNode(e.target)) return;
+    setDraggingElement(false);
     snapCandidates.current = null;
     guidesRef.current?.clear();
+  };
+
+  const onTransformStart = () => {
+    const stage = stageRef.current;
+    const node = transformerRef.current?.nodes()[0];
+    // A rotated box has no edges to line up, and a group has no one box to snap.
+    if (!stage || !node || selectedIds.length !== 1 || node.rotation() !== 0) return;
+    const candidates = snapCandidatesFor(stage, node.id());
+    resizeSnap.current = candidates && { candidates, start: boundsOf(node) };
+  };
+
+  const onTransformEnd = () => {
+    resizeSnap.current = null;
+    guidesRef.current?.clear();
+  };
+
+  /** Pulls the handle being dragged to whatever it lines up with. Stage px in and out. */
+  const snapResizeHandle = (
+    _old: Konva.Vector2d,
+    next: Konva.Vector2d,
+    event?: MouseEvent,
+  ) => {
+    const snap = resizeSnap.current;
+    const anchor = transformerRef.current?.getActiveAnchor() ?? "";
+    if (!snap || anchor === "rotater" || event?.shiftKey) {
+      guidesRef.current?.clear();
+      return next;
+    }
+
+    const { point, guides } = snapPoint(
+      [next.x / scale, next.y / scale],
+      snap.candidates,
+      SNAP_THRESHOLD_PX / scale,
+    );
+    const resized = resizeSnapResult(anchor, [next.x / scale, next.y / scale], point, snap.start, fixedRatio);
+    guidesRef.current?.show(guides.filter((guide) => resized.axes.includes(guide.axis)));
+    return { x: resized.point[0] * scale, y: resized.point[1] * scale };
   };
 
   // Handle element selection with shift-key multi-select support
@@ -262,17 +365,96 @@ export const CanvasStage = () => {
       ? elements.find((el) => el.id === selectedIds[0])
       : null;
 
-  const selectedToolbarElement =
-    selectedElement?.type === "image" || selectedElement?.type === "text"
+  // Checks the whole selection: resizing a group scales every element in it, so
+  // one free handle would stretch any image in the group.
+  const hasImage = elements.some(
+    (el) => selectedIds.includes(el.id) && el.type === "image",
+  );
+
+  const fixedRatio =
+    hasImage ||
+    selectedElement?.type === "text" ||
+    (selectedElement?.type === "shape" &&
+      FIXED_RATIO_SHAPES.has(selectedElement.shape));
+
+  // The Transformer measures its box in screen pixels, so sizes scale with the stage.
+  const framed =
+    selectedElement?.type === "image" && !!selectedElement.deviceFrame;
+  const minBoxWidth = framed ? MIN_FRAME_SIZE.width * scale : MIN_TRANSFORM_SIZE;
+  const minBoxHeight = framed ? MIN_FRAME_SIZE.height * scale : MIN_TRANSFORM_SIZE;
+
+  const cropElement =
+    selectedElement?.type === "image" && selectedElement.id === cropId
       ? selectedElement
       : null;
+
+  const arrangement = useMemo(
+    () => (layout ? arrangeLayout(layout, elements, canvas) : null),
+    [layout, elements, canvas],
+  );
+
+  // A slot decides where an image goes and how big it is, so there's nothing to drag.
+  const selectionInLayout = !!layout?.slots.some(
+    (slot) => slot.id && selectedIds.includes(slot.id),
+  );
+
+  const addToLayout = (slot: number) => {
+    layoutFileSlot.current = slot;
+    layoutFileRef.current?.click();
+  };
+
+  const onLayoutFiles = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const input = event.target;
+    const files = Array.from(input.files ?? []);
+    let slot = layoutFileSlot.current;
+    for (const file of files) {
+      const chosen = slot;
+      await importImageFile(file, (src, width, height) =>
+        chosen === null
+          ? addImage(src, width, height)
+          : useEditor.getState().fillSlot(chosen, src, width, height),
+      );
+      // The first file goes where the user clicked; the rest take the next free slots.
+      slot = null;
+    }
+    input.value = "";
+  };
+
+  const anchors =
+    selectedElement?.type === "text"
+      ? TEXT_ANCHORS
+      : fixedRatio
+        ? CORNER_ANCHORS
+        : ALL_ANCHORS;
+
+  const handleElement =
+    selectedElement?.type === "shape" &&
+    !selectedElement.locked &&
+    !selectedElement.hidden &&
+    !draggingElement &&
+    !markTool &&
+    selectedElement.id !== editingId
+      ? selectedElement
+      : null;
+
+  const selectedToolbarElement =
+    (selectedElement?.type === "image" || selectedElement?.type === "text") &&
+    !selectedElement.locked &&
+    !selectedElement.hidden &&
+    selectedElement.id !== editingId
+      ? selectedElement
+      : null;
+
+  const toolbarHalfWidth = selectedToolbarElement
+    ? TOOLBAR_HALF_WIDTH[selectedToolbarElement.type]
+    : 0;
 
   const toolbarPosition = selectedToolbarElement
     ? {
         x: clamp(
           (selectedToolbarElement.x + selectedToolbarElement.width / 2) * scale,
-          120,
-          Math.max(120, displayW - 120),
+          toolbarHalfWidth,
+          Math.max(toolbarHalfWidth, displayW - toolbarHalfWidth),
         ),
         y: clamp(
           selectedToolbarElement.y * scale - 10,
@@ -282,17 +464,11 @@ export const CanvasStage = () => {
       }
     : null;
 
-  const selectedTiltedImage =
-    selectedElement?.type === "image" &&
-    !selectedElement.deviceFrame &&
-    isImageTiltActive(selectedElement.transform)
-      ? (selectedElement as ImageElement)
-      : null;
 
   const updateSelectedText = (patch: Partial<TextElement>) => {
     if (!selectedToolbarElement || selectedToolbarElement.type !== "text")
       return;
-    updateElement(selectedToolbarElement.id, patch as Partial<LaybelElement>);
+    updateElement(selectedToolbarElement.id, patch as Partial<LayerElement>);
   };
 
   const deleteSelectedElement = () => {
@@ -336,11 +512,20 @@ export const CanvasStage = () => {
           height={displayH}
           scaleX={scale}
           scaleY={scale}
+          style={{
+            cursor: markTool
+              ? markTool.kind === "text"
+                ? "text"
+                : "crosshair"
+              : undefined,
+          }}
           onMouseDown={onStagePointerDown}
           onTouchStart={onStagePointerDown}
+          onPointerDown={placement.onPointerDown}
+          onPointerMove={placement.onPointerMove}
         >
-          {/* Background layer - non-interactive */}
-          <Layer listening={false}>
+          {/* Background layer - non-interactive. Named so export can leave it out. */}
+          <Layer name={BACKGROUND_LAYER_NAME} listening={false}>
             <Background
               bg={background}
               width={canvas.width}
@@ -353,6 +538,8 @@ export const CanvasStage = () => {
               events, so one handler covers every element type instead of
               repeating the snap logic in each of them. */}
           <Layer
+            name={CONTENT_LAYER_NAME}
+            listening={!markTool && !cropElement}
             onDragStart={onElementDragStart}
             onDragMove={onElementDragMove}
             onDragEnd={onElementDragEnd}
@@ -397,11 +584,25 @@ export const CanvasStage = () => {
               return null;
             })}
 
+            {arrangement && <LayoutDecorNodes arrangement={arrangement} />}
+
             {/* Transform handles for selected elements */}
             <Transformer
               ref={transformerRef}
-              rotateEnabled
-              keepRatio={false}
+              rotateEnabled={!selectionInLayout}
+              keepRatio={fixedRatio}
+              enabledAnchors={selectionInLayout ? [] : anchors}
+              flipEnabled={false}
+              ignoreStroke
+              onTransformStart={onTransformStart}
+              onTransformEnd={onTransformEnd}
+              anchorDragBoundFunc={snapResizeHandle}
+              boundBoxFunc={(oldBox, newBox) =>
+                Math.abs(newBox.width) < minBoxWidth ||
+                Math.abs(newBox.height) < minBoxHeight
+                  ? oldBox
+                  : newBox
+              }
               borderStroke="#AFA9EC"
               borderStrokeWidth={1.5}
               anchorFill="#fff"
@@ -409,19 +610,7 @@ export const CanvasStage = () => {
               anchorSize={9}
             />
 
-            {/* Watermark (Phase 1: composited in JS, always shown for non-Pro) */}
-            {watermark && (
-              <KText
-                x={canvas.width - 240}
-                y={canvas.height - 50}
-                text="Made with Laybel"
-                fontSize={22}
-                fontFamily="DM Sans"
-                fontStyle="500"
-                fill="rgba(255,255,255,0.7)"
-                listening={false}
-              />
-            )}
+            <Watermarks settings={watermark} canvas={canvas} />
           </Layer>
 
           {/*
@@ -435,21 +624,66 @@ export const CanvasStage = () => {
             </Layer>
           )}
 
+          {markTool && <MarkDraft ref={draftRef} />}
+
+          {handleElement && (
+            <MarkHandles el={handleElement} scale={scale} guidesRef={guidesRef} />
+          )}
+
+          {arrangement && !markTool && !cropElement && (
+            <LayoutSlotsLayer
+              arrangement={arrangement}
+              dropSlot={dropSlot}
+              scale={scale}
+              onAdd={addToLayout}
+            />
+          )}
+
+          {cropElement && (
+            <CropOverlay
+              key={cropElement.id}
+              ref={cropRef}
+              el={cropElement}
+              scale={scale}
+            />
+          )}
+
           {/* Topmost: guides must read over both content and the grid. */}
           <SnapGuides ref={guidesRef} />
         </Stage>
 
-        {selectedTiltedImage && (
-          <TiltedImageOverlay
-            ref={tiltOverlayRef}
-            image={selectedTiltedImage}
-            scale={scale}
-          />
-        )}
+        <input
+          ref={layoutFileRef}
+          type="file"
+          multiple
+          accept="image/png,image/jpeg,image/webp,image/svg+xml"
+          className="hidden"
+          onChange={onLayoutFiles}
+          aria-label="Add images to layout slot"
+        />
+
+        {editingId && <TextEditor scale={scale} />}
+
 
         {selectedToolbarElement && toolbarPosition && (
           <SelectionToolbar
             element={selectedToolbarElement}
+            canvas={canvas}
+            cropping={!!cropElement}
+            onCropStart={() => setCropId(selectedToolbarElement.id)}
+            onCropApply={() => cropRef.current?.apply()}
+            onCropReset={() => cropRef.current?.reset()}
+            onCropCancel={() => setCropId(null)}
+            onImageChange={(patch) =>
+              updateElement(selectedToolbarElement.id, patch)
+            }
+            onEdit={() => revealSection("image.edit")}
+            onHighlight={() => {
+              setActiveTool("annotation");
+              useEditor
+                .getState()
+                .setMarkTool({ kind: "stroke", shape: "highlight" });
+            }}
             position={toolbarPosition}
             moreOpen={toolbarMoreOpenFor === selectedToolbarElement.id}
             onMoreOpenChange={(open) =>
@@ -460,7 +694,7 @@ export const CanvasStage = () => {
             onLayerForward={() => moveSelectedElement(1)}
             onLayerBackward={() => moveSelectedElement(-1)}
             onTextChange={updateSelectedText}
-            onOpenTextPanel={() => setActiveTool("header")}
+            onOpenTextPanel={() => revealSection("text.typography")}
           />
         )}
       </div>

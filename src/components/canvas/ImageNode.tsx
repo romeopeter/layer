@@ -1,9 +1,28 @@
+import { memo, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import type Konva from "konva";
 import { Image as KImage, Group, Rect } from "react-konva";
 import useImage from "use-image";
-import type { ImageElement, DeviceFrame } from "../../types";
+import type { ImageElement } from "../../types";
 import { useEditor } from "../../store/editor";
-import { isImageTiltActive } from "@/lib/tilt";
+import { visibleCrop } from "@/lib/layouts";
+import {
+  browserLookOf,
+  frameArtUrl,
+  frameShapeOf,
+  hasArtwork,
+  isFrameTurned,
+  pictureView,
+  screenBoxOf,
+  screenPathOf,
+  sourceOf,
+} from "@/lib/mockups";
+import { isImageTiltActive, parseImageTilt } from "@/lib/tilt";
+import { isTiltSupported, renderTilt, tiltBoxOf, tiltCorners, type TiltLook } from "@/lib/tiltRender";
+import { sameNodeProps } from "./nodeProps";
+import { BrowserBack, BrowserFront } from "./BrowserFrame";
+import { useEditedImage } from "./useEditedImage";
+import { useAltHeld } from "./usePictureDrag";
+import { WindowBack, WindowFront } from "./WindowFrame";
 
 /* ----------------------------------------------------------------- */
 
@@ -24,222 +43,251 @@ const shadowProps = (el: ImageElement) =>
       }
     : {};
 
-// Inset for clipped screenshot area within each device frame
-const FRAME_INSET: Record<
-  NonNullable<DeviceFrame>,
-  {
-    top: number;
-    right: number;
-    bottom: number;
-    left: number;
-    outerPad: number;
-    chromeColor: string;
-  }
-> = {
-  "macbook-light": {
-    top: 24,
-    right: 28,
-    bottom: 60,
-    left: 28,
-    outerPad: 0,
-    chromeColor: "#E7E5F5",
-  },
-  "macbook-dark": {
-    top: 24,
-    right: 28,
-    bottom: 60,
-    left: 28,
-    outerPad: 0,
-    chromeColor: "#1A1826",
-  },
-  "iphone-light": {
-    top: 60,
-    right: 16,
-    bottom: 60,
-    left: 16,
-    outerPad: 0,
-    chromeColor: "#E7E5F5",
-  },
-  "iphone-dark": {
-    top: 60,
-    right: 16,
-    bottom: 60,
-    left: 16,
-    outerPad: 0,
-    chromeColor: "#0F0E1A",
-  },
-  "browser-light": {
-    top: 36,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    outerPad: 0,
-    chromeColor: "#EEEDFE",
-  },
-  "browser-dark": {
-    top: 36,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    outerPad: 0,
-    chromeColor: "#1A1826",
-  },
+/** A tilted picture is drawn at twice its size, so it's sharp in a 2× export too. */
+const TILT_SCALE = 2;
+
+/**
+ * The picture drawn tilted, and where it goes, when the image has a 3D tilt and
+ * no frame. Null otherwise. Kept in step with every change to the image.
+ */
+const useTiltedPicture = (
+  el: ImageElement,
+  picture: CanvasImageSource | undefined,
+  edited: boolean,
+  crop: ReturnType<typeof visibleCrop>,
+  onDraw: () => void,
+) => {
+  const active = !el.deviceFrame && isImageTiltActive(el.transform) && isTiltSupported();
+  const out = useMemo(() => document.createElement("canvas"), []);
+  const look = useMemo<TiltLook>(
+    () => ({
+      tilt: parseImageTilt(el.transform),
+      width: el.width,
+      height: el.height,
+      cornerRadius: el.cornerRadius,
+      border: el.border?.enabled ? el.border : null,
+    }),
+    [el.transform, el.width, el.height, el.cornerRadius, el.border],
+  );
+  // Where the tilted picture goes, worked out from the tilt alone.
+  const box = useMemo(() => tiltBoxOf(tiltCorners(look)), [look]);
+  const drawRef = useRef(onDraw);
+  useEffect(() => {
+    drawRef.current = onDraw;
+  });
+
+  useLayoutEffect(() => {
+    if (!active || !picture) return;
+    // The part that shows, as the texture: an edited picture already has its crop.
+    let source: TexImageSource = picture as TexImageSource;
+    if (!edited && crop && picture instanceof HTMLImageElement) {
+      const part = document.createElement("canvas");
+      part.width = Math.max(1, Math.round(crop.width * picture.naturalWidth));
+      part.height = Math.max(1, Math.round(crop.height * picture.naturalHeight));
+      part.getContext("2d")?.drawImage(
+        picture,
+        crop.x * picture.naturalWidth,
+        crop.y * picture.naturalHeight,
+        part.width,
+        part.height,
+        0,
+        0,
+        part.width,
+        part.height,
+      );
+      source = part;
+    }
+    renderTilt(source, look, TILT_SCALE, out);
+    drawRef.current();
+  }, [active, picture, edited, crop, look, out]);
+
+  return active ? { canvas: out, box } : null;
 };
 
-export const ImageNode = ({ el, onSelect }: Props) => {
+const ImageNodeBody = ({ el, onSelect }: Props) => {
   const [img] = useImage(el.src, "anonymous");
+  const frame = el.deviceFrame;
+  const usesArt = !!frame && hasArtwork(frame);
+  const [art] = useImage(usesArt ? frameArtUrl(frame) : "", "anonymous");
+  const pictureRef = useRef<Konva.Image>(null);
+  const crop = useMemo(() => visibleCrop(el), [el.crop, el.layoutCrop]); // eslint-disable-line react-hooks/exhaustive-deps -- only these two feed it
+  const inLayout = useEditor((s) => !!s.layout?.slots.some((slot) => slot.id === el.id));
+  const { picture, edited } = useEditedImage(
+    img,
+    el.edit,
+    crop,
+    () => pictureRef.current?.getLayer()?.batchDraw(),
+  );
   const update = useEditor((s) => s.updateElement);
+  const altHeld = useAltHeld();
+
+  // Images saved before this was recorded learn their size on first load.
+  useEffect(() => {
+    if (img && el.naturalWidth === undefined) {
+      useEditor.getState().setNaturalSize(el.id, img.naturalWidth, img.naturalHeight);
+    }
+  }, [img, el.id, el.naturalWidth]);
+
   const sp = shadowProps(el);
-  const selectedIds = useEditor((s) => s.selectedIds);
-  const showTiltPlaceholder =
-    selectedIds.includes(el.id) && !el.deviceFrame && isImageTiltActive(el.transform);
+  const cropping = useEditor((s) => s.cropId === el.id);
+  const tilted = useTiltedPicture(el, picture, edited, crop, () => pictureRef.current?.getLayer()?.batchDraw());
 
-  if (!img) return null;
-
-  if (!el.deviceFrame) {
+  // Holds the node while the image loads: a new image is selected straight away,
+  // and the Transformer only attaches to nodes that already exist.
+  if (!img || !picture || (usesArt && !art)) {
     return (
-      <Group
-        {...sp}
-        id={el.id}
-        x={el.x}
-        y={el.y}
-        rotation={el.rotation}
-        opacity={el.opacity}
-        draggable
-        onClick={onSelect}
-        onTap={onSelect}
-        onDragEnd={(e) => update(el.id, { x: e.target.x(), y: e.target.y() })}
-        onTransformEnd={(e) => {
-          const node = e.target;
-          const sx = node.scaleX(); const sy = node.scaleY();
-          node.scaleX(1); node.scaleY(1);
-          update(el.id, {
-            x: node.x(), y: node.y(),
-            width: Math.max(20, el.width * sx),
-            height: Math.max(20, el.height * sy),
-            rotation: node.rotation(),
-          });
-        }}
-      >
-        {showTiltPlaceholder ? (
-          <Rect width={el.width} height={el.height} opacity={0} />
+      <Group id={el.id} x={el.x} y={el.y} rotation={el.rotation} visible={!el.hidden}>
+        <Rect width={el.width} height={el.height} opacity={0} />
+      </Group>
+    );
+  }
+
+  const onTransform = (e: Konva.KonvaEventObject<Event>) => {
+    const node = e.target;
+    const sx = node.scaleX(); const sy = node.scaleY();
+    node.scaleX(1); node.scaleY(1);
+    update(el.id, {
+      x: node.x(), y: node.y(),
+      width: el.width * sx,
+      height: el.height * sy,
+      rotation: node.rotation(),
+    });
+  };
+
+  const nodeProps = {
+    id: el.id,
+    x: el.x,
+    y: el.y,
+    rotation: el.rotation,
+    opacity: el.opacity,
+    // Alt-dragging moves a mockup's picture instead; see usePictureDrag.
+    draggable: !el.locked && !inLayout && !(frame && altHeld),
+    visible: !el.hidden,
+    onClick: onSelect,
+    onTap: onSelect,
+    onDragEnd: (e: Konva.KonvaEventObject<DragEvent>) =>
+      update(el.id, { x: e.target.x(), y: e.target.y() }),
+    onTransform,
+  };
+
+  const shape = frameShapeOf(el);
+  if (!frame || !shape) {
+    return (
+      <Group {...sp} {...nodeProps}>
+        {tilted ? (
+          <>
+            {/* The element's own box, for selecting and handles; the tilt can spill past it. */}
+            <Rect width={el.width} height={el.height} opacity={0} />
+            <KImage
+              ref={pictureRef}
+              name="tilted-picture"
+              image={tilted.canvas}
+              {...tilted.box}
+              visible={!cropping}
+              listening={false}
+              {...sp}
+            />
+          </>
         ) : (
           <KImage
-            image={img}
+            ref={pictureRef}
+            image={picture}
             width={el.width}
             height={el.height}
-            cornerRadius={el.cornerRadius}
-            stroke={el.border?.enabled ? el.border.color : undefined}
-            strokeWidth={el.border?.enabled ? el.border.width : 0}
+            visible={!cropping}
+            // An edited picture has the crop baked in.
+            crop={
+              !edited && crop ? {
+                x: crop.x * img.naturalWidth,
+                y: crop.y * img.naturalHeight,
+                width: crop.width * img.naturalWidth,
+                height: crop.height * img.naturalHeight,
+              } : undefined
+            }
+            cornerRadius={Math.min(el.cornerRadius, el.width / 2, el.height / 2)}
+          />
+        )}
+        {!tilted && el.border?.enabled && el.border.width > 0 && (
+          // Inside the edge, so the image keeps its size and the border follows its corners.
+          <Rect
+            x={el.border.width / 2}
+            y={el.border.width / 2}
+            width={Math.max(0, el.width - el.border.width)}
+            height={Math.max(0, el.height - el.border.width)}
+            cornerRadius={Math.max(0, Math.min(el.cornerRadius, el.width / 2, el.height / 2) - el.border.width / 2)}
+            stroke={el.border.color}
+            strokeWidth={el.border.width}
+            visible={!cropping}
+            listening={false}
           />
         )}
       </Group>
     );
   }
 
-  // Device frame overlay: draw chrome rect + clip image to screen area
-  const inset = FRAME_INSET[el.deviceFrame];
-  const screenX = inset.left;
-  const screenY = inset.top;
-  const screenW = el.width - inset.left - inset.right;
-  const screenH = el.height - inset.top - inset.bottom;
+  // The picture is drawn on the screen, and only ever the part that lands on it. Filling
+  // means taking a part with the screen's shape, so it's never stretched.
+  const screen = screenBoxOf(el, shape);
+  // An edited picture has the crop baked in.
+  const source = edited
+    ? { x: 0, y: 0, width: picture.width as number, height: picture.height as number }
+    : sourceOf(crop, img.naturalWidth, img.naturalHeight);
+  const { drawn, shown } = pictureView(source, screen, frame);
 
-  // Cover-fit screenshot inside screen
-  const ratio = Math.max(screenW / img.width, screenH / img.height);
-  const iw = img.width * ratio;
-  const ih = img.height * ratio;
-  const ix = screenX + (screenW - iw) / 2;
-  const iy = screenY + (screenH - ih) / 2;
-
-  const isBrowser = el.deviceFrame.startsWith("browser");
-  const isPhone = el.deviceFrame.startsWith("iphone");
-  const cornerR = isPhone ? 56 : isBrowser ? 12 : 18;
-
-  return (
+  const path = screenPathOf(el, shape);
+  const pictureNodes = (
     <Group
-      {...sp}
-      id={el.id}
-      x={el.x}
-      y={el.y}
-      rotation={el.rotation}
-      opacity={el.opacity}
-      draggable
-      onClick={onSelect}
-      onTap={onSelect}
-      onDragEnd={(e) => update(el.id, { x: e.target.x(), y: e.target.y() })}
-      onTransformEnd={(e) => {
-        const node = e.target;
-        const sx = node.scaleX(); const sy = node.scaleY();
-        node.scaleX(1); node.scaleY(1);
-        update(el.id, {
-          x: node.x(), y: node.y(),
-          width: Math.max(120, el.width * sx),
-          height: Math.max(80, el.height * sy),
-          rotation: node.rotation(),
-        });
+      clipFunc={(ctx) => {
+        const { x, y, width, height, corners } = path;
+        const [topLeft, topRight, bottomRight, bottomLeft] = corners;
+        ctx.beginPath();
+        ctx.moveTo(x + topLeft, y);
+        ctx.arcTo(x + width, y, x + width, y + height, topRight);
+        ctx.arcTo(x + width, y + height, x, y + height, bottomRight);
+        ctx.arcTo(x, y + height, x, y, bottomLeft);
+        ctx.arcTo(x, y, x + width, y, topLeft);
+        ctx.closePath();
       }}
     >
-      {/* Frame body */}
-      <Rect
-        x={0}
-        y={0}
-        width={el.width}
-        height={el.height}
-        fill={inset.chromeColor}
-        cornerRadius={cornerR}
-        stroke="rgba(0,0,0,0.25)"
-        strokeWidth={1}
-      />
-      {/* Browser dots */}
-      {isBrowser && (
-        <>
-          <Rect x={12} y={12} width={10} height={10} fill="#FF6B5B" cornerRadius={5} />
-          <Rect x={28} y={12} width={10} height={10} fill="#F8C24A" cornerRadius={5} />
-          <Rect x={44} y={12} width={10} height={10} fill="#54C56A" cornerRadius={5} />
-        </>
-      )}
-      {/* Screen */}
-      <Group
-        clipFunc={(ctx) => {
-          const r = isBrowser ? 0 : 8;
-          ctx.beginPath();
-          ctx.moveTo(screenX + r, screenY);
-          ctx.lineTo(screenX + screenW - r, screenY);
-          ctx.quadraticCurveTo(screenX + screenW, screenY, screenX + screenW, screenY + r);
-          ctx.lineTo(screenX + screenW, screenY + screenH - r);
-          ctx.quadraticCurveTo(screenX + screenW, screenY + screenH, screenX + screenW - r, screenY + screenH);
-          ctx.lineTo(screenX + r, screenY + screenH);
-          ctx.quadraticCurveTo(screenX, screenY + screenH, screenX, screenY + screenH - r);
-          ctx.lineTo(screenX, screenY + r);
-          ctx.quadraticCurveTo(screenX, screenY, screenX + r, screenY);
-          ctx.closePath();
-        }}
-      >
-        <Rect x={screenX} y={screenY} width={screenW} height={screenH} fill="#0F0E1A" />
-        <KImage image={img} x={ix} y={iy} width={iw} height={ih} />
+      <Rect {...screen} fill={frame.barColor} listening={false} />
+      <KImage ref={pictureRef} name="mockup-picture" image={picture} {...drawn} crop={shown} />
+    </Group>
+  );
+
+  if (usesArt && art) {
+    // Drawn twice: a shadow cast by the frame would otherwise fall across the screen.
+    const artProps = isFrameTurned(frame)
+      ? { x: 0, y: el.height, width: el.height, height: el.width, rotation: -90 }
+      : { width: el.width, height: el.height };
+    return (
+      <Group {...nodeProps}>
+        <Group visible={!cropping}>
+          {el.shadow?.enabled && <KImage image={art} {...artProps} {...sp} listening={false} />}
+          {pictureNodes}
+          <KImage name="mockup-frame" image={art} {...artProps} />
+        </Group>
       </Group>
-      {/* MacBook hinge */}
-      {el.deviceFrame.startsWith("macbook") && (
-        <Rect
-          x={el.width / 2 - 60}
-          y={el.height - 14}
-          width={120}
-          height={6}
-          fill="rgba(0,0,0,0.2)"
-          cornerRadius={3}
-        />
-      )}
-      {/* iPhone notch */}
-      {isPhone && (
-        <Rect
-          x={el.width / 2 - 50}
-          y={20}
-          width={100}
-          height={26}
-          fill="#0F0E1A"
-          cornerRadius={13}
-        />
-      )}
+    );
+  }
+
+  const isBrowser = !!browserLookOf(frame);
+  return (
+    <Group {...nodeProps}>
+      <Group visible={!cropping}>
+        {isBrowser ? (
+          <BrowserBack el={el} frame={frame} shadow={sp} path={path} />
+        ) : (
+          <WindowBack el={el} frame={frame} shadow={sp} path={path} />
+        )}
+        {pictureNodes}
+        {isBrowser ? (
+          <BrowserFront el={el} frame={frame} />
+        ) : (
+          <WindowFront el={el} frame={frame} path={path} />
+        )}
+      </Group>
     </Group>
   );
 };
+
+export const ImageNode = memo(ImageNodeBody, sameNodeProps);
