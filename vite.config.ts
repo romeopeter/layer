@@ -10,6 +10,11 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  // Loaded only when exporting an animation: bundled up front, or Vite reloads the
+  // page the first time an export reaches for them.
+  optimizeDeps: {
+    include: ["mediabunny", "gifenc"],
+  },
   server: {
     port: 5173,
     host: "127.0.0.1",

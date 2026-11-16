@@ -29,7 +29,7 @@ const dataURLtoBlob = (dataUrl: string): Blob => {
  * but must never reach the output — any future viewport aid (rulers, safe-area
  * guides) belongs in this list too.
  */
-const withOverlaysHidden = async <T,>(
+export const withOverlaysHidden = async <T,>(
   stage: Konva.Stage,
   options: { withoutBackground?: boolean },
   fn: () => Promise<T>,
@@ -61,6 +61,23 @@ export interface ExportOptions {
   withoutBackground?: boolean;
 }
 
+/**
+ * What to capture: the canvas at its own size, `pixelRatio` pixels to each of its
+ * pixels. The stage is scaled to fit the screen, which this undoes.
+ */
+export const captureBox = (stage: Konva.Stage, pixelRatio: number) => {
+  const { canvas } = useEditor.getState();
+  const scaleX = stage.scaleX();
+  const scaleY = stage.scaleY();
+  return {
+    pixelRatio: pixelRatio / scaleX,
+    x: 0,
+    y: 0,
+    width: canvas.width * scaleX,
+    height: canvas.height * scaleY,
+  };
+};
+
 export const renderCanvasDataURL = (
   format: "png" | "jpg" | "webp" = "png",
   pixelRatio = 2,
@@ -79,20 +96,10 @@ export const renderCanvasDataURL = (
     const cleanupBackdrop = await prepareExportBackdrop(stage, pixelRatio);
 
     try {
-      // Stage is currently scaled to fit; export uses the canvas's intrinsic resolution
-      const { canvas } = useEditor.getState();
-      const scaleX = stage.scaleX();
-      const scaleY = stage.scaleY();
-
-      // Compensate: scale up the export so the result is at intrinsic resolution × pixelRatio
       return stage.toDataURL({
-        pixelRatio: pixelRatio / scaleX,
+        ...captureBox(stage, pixelRatio),
         mimeType: format === "jpg" ? "image/jpeg" : `image/${format}`,
         quality: 0.95,
-        x: 0,
-        y: 0,
-        width: canvas.width * scaleX,
-        height: canvas.height * scaleY,
       });
     } finally {
       cleanupPatternTiles?.();

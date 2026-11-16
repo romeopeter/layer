@@ -42,6 +42,9 @@ enum ExportFormat {
     Png,
     Jpg,
     Webp,
+    /// An animation, as H.264 video or a looping GIF.
+    Mp4,
+    Gif,
 }
 
 impl ExportFormat {
@@ -55,6 +58,8 @@ impl ExportFormat {
             "png" => Ok(Self::Png),
             "jpg" => Ok(Self::Jpg),
             "webp" => Ok(Self::Webp),
+            "mp4" => Ok(Self::Mp4),
+            "gif" => Ok(Self::Gif),
             _ => Err(FileError::UnsupportedFormat),
         }
     }
@@ -64,6 +69,8 @@ impl ExportFormat {
             Self::Png => ("PNG image", &["png"]),
             Self::Jpg => ("JPG image", &["jpg", "jpeg"]),
             Self::Webp => ("WebP image", &["webp"]),
+            Self::Mp4 => ("MP4 video", &["mp4"]),
+            Self::Gif => ("GIF image", &["gif"]),
         }
     }
 }
@@ -174,8 +181,8 @@ pub async fn open_project(app: AppHandle) -> Result<Option<String>, String> {
     .await
 }
 
-/// Takes the encoded image as a raw IPC body: a 2× export is tens of megabytes,
-/// which would be slow to pass as a JSON-encoded data URL.
+/// Takes the encoded image or animation as a raw IPC body: a 2× export or a video
+/// is tens of megabytes, which would be slow to pass as a JSON-encoded data URL.
 #[tauri::command]
 pub async fn export_static(app: AppHandle, request: Request<'_>) -> Result<(), String> {
     let parsed = parse_export_request(&request);
@@ -238,7 +245,16 @@ mod tests {
             ExportFormat::from_filename("a.webp").ok(),
             Some(ExportFormat::Webp)
         );
+        assert_eq!(
+            ExportFormat::from_filename("a.mp4").ok(),
+            Some(ExportFormat::Mp4)
+        );
+        assert_eq!(
+            ExportFormat::from_filename("a.gif").ok(),
+            Some(ExportFormat::Gif)
+        );
         assert!(ExportFormat::from_filename("a.exe").is_err());
+        assert!(ExportFormat::from_filename("a.mov").is_err());
         assert!(ExportFormat::from_filename("noextension").is_err());
     }
 

@@ -11,6 +11,8 @@ import {
 } from "@/components/ui/popover";
 import { CanvasSizePicker } from "./CanvasSizePicker";
 import { ExportMenu } from "./ExportMenu";
+import { AnimationExportDialog } from "./AnimationExportDialog";
+import { useAnimationExport } from "./useAnimationExport";
 
 /* ------------------------------------------------------------------------------------------------ */
 
@@ -26,6 +28,7 @@ export const TopBar = ({ onPreview }: Props) => {
   const canRedo = useEditor((s) => s.canRedo);
   const [sizePickerOpen, setSizePickerOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const animation = useAnimationExport();
 
   return (
     <header
@@ -126,7 +129,7 @@ export const TopBar = ({ onPreview }: Props) => {
             </Button>
           </PopoverTrigger>
           <PopoverContent align="end" sideOffset={6} className="w-72 p-2">
-            <ExportMenu onClose={() => setExportOpen(false)} />
+            <ExportMenu onClose={() => setExportOpen(false)} onExportAnimation={animation.start} />
           </PopoverContent>
         </Popover>
 
@@ -143,6 +146,8 @@ export const TopBar = ({ onPreview }: Props) => {
           Sign In <ArrowRight className="h-3 w-3" />
         </Button> */}
       </div>
+
+      <AnimationExportDialog job={animation.job} onCancel={animation.cancel} />
     </header>
   );
 };

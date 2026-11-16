@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { addTwoToneImage, openApp, openSection, openTool } from "./helpers";
+import { addTwoToneImage, fakeShell, openApp, openSection, openTool } from "./helpers";
 
 /** The motion maths, reached through Vite, for checking poses against. */
 const loadMotion = (page: Page) =>
@@ -502,5 +502,129 @@ test.describe("Animate: live backgrounds", () => {
     expect(offset.offset.x).toBeCloseTo(offset.tile / 2, 5);
     await page.evaluate(`POSE.restStage(ST(), S.getState(), { scale: 1, frame: 0, preview: true })`);
     expect(await page.evaluate(`ST().findOne(".pattern-fill").fillPatternOffset().x`)).toBe(0);
+  });
+});
+
+test.describe("Animate: export", () => {
+  /** The file an export makes, as bytes, and how long it took. */
+  const render = (page: Page, options: Record<string, unknown>) =>
+    page.evaluate(`(async () => {
+      const ex = await import("/src/lib/motion/exportAnimation.ts");
+      const started = performance.now();
+      const blob = await ex.renderAnimation(${JSON.stringify({ scale: 1, fps: 30, gifSize: "small", ...options })});
+      const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()));
+      return { bytes, type: blob.type, seconds: (performance.now() - started) / 1000 };
+    })()`) as Promise<{ bytes: number[]; type: string; seconds: number }>;
+
+  const text = (bytes: number[]) => String.fromCharCode(...bytes.slice(0, 4096));
+
+  test("an MP4 is an H.264 video, and the canvas is back at rest after", async ({ page }) => {
+    await openApp(page);
+    await addTwoToneImage(page);
+    await page.evaluate(`S.getState().setMotion({ camera: "push-in", length: 2 })`);
+    const before = await page.evaluate(`JSON.stringify(S.getState().elements)`);
+    const file = await render(page, { format: "mp4" });
+    expect(file.type).toBe("video/mp4");
+    const head = text(file.bytes);
+    expect(head).toContain("ftyp");
+    expect(head).toContain("avc1");
+    expect(await page.evaluate(`S.getState().previewing`)).toBe(false);
+    expect(await page.evaluate(`ST().findOne(".motion-camera").scaleX()`)).toBe(1);
+    expect(await page.evaluate(`JSON.stringify(S.getState().elements)`)).toBe(before);
+  });
+
+  test("a GIF loops forever and has a frame for every twentieth of a second", async ({ page }) => {
+    await openApp(page);
+    const id = await addTwoToneImage(page);
+    await page.evaluate(`(() => {
+      const s = S.getState();
+      s.setMotion({ length: 2 });
+      s.setElementMotion("${id}", { keep: "float" });
+    })()`);
+    const file = await render(page, { format: "gif" });
+    expect(file.type).toBe("image/gif");
+    expect(String.fromCharCode(...file.bytes.slice(0, 6))).toBe("GIF89a");
+    expect(text(file.bytes)).toContain("NETSCAPE2.0");
+    // Each frame starts with a graphic control extension: 0x21 0xF9 0x04.
+    let frames = 0;
+    for (let i = 0; i + 2 < file.bytes.length; i++) {
+      if (file.bytes[i] === 0x21 && file.bytes[i + 1] === 0xf9 && file.bytes[i + 2] === 0x04) frames++;
+    }
+    expect(frames).toBe(40);
+    // Small: 480 on the long side.
+    const width = file.bytes[6] | (file.bytes[7] << 8);
+    expect(width).toBe(480);
+  });
+
+  test("cancelling stops it and puts the canvas back", async ({ page }) => {
+    await openApp(page);
+    await addTwoToneImage(page);
+    await page.evaluate(`S.getState().setMotion({ camera: "drift", length: 4 })`);
+    const outcome = await page.evaluate(`(async () => {
+      const ex = await import("/src/lib/motion/exportAnimation.ts");
+      const stop = new AbortController();
+      const run = ex.renderAnimation({ format: "gif", scale: 1, fps: 30, gifSize: "small", signal: stop.signal,
+        onProgress: (done) => { if (done === 5) stop.abort(); } });
+      try { await run; return "finished"; } catch (error) { return error.name; }
+    })()`);
+    expect(outcome).toBe("AbortError");
+    expect(await page.evaluate(`S.getState().previewing`)).toBe(false);
+    expect(await page.evaluate(`ST().findOne(".motion-camera").scaleX()`)).toBe(1);
+  });
+});
+
+test.describe("Animate: the Export menu", () => {
+  const openExport = async (page: Page) => {
+    await page.getByRole("button", { name: "Export", exact: true }).click();
+  };
+
+  test("asks for motion first, and keeps the background in videos", async ({ page }) => {
+    await openApp(page);
+    await addTwoToneImage(page);
+    await openExport(page);
+    await expect(page.getByRole("button", { name: "Download GIF" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Download MP4" })).toBeDisabled();
+    await page.getByRole("button", { name: "Animate", exact: true }).last().click();
+    await expect(animatePanel(page).getByRole("group", { name: "Camera moves" })).toBeVisible();
+
+    await animatePanel(page).getByRole("button", { name: "Drift" }).click();
+    await openExport(page);
+    await expect(page.getByRole("button", { name: "Download GIF" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Download MP4" })).toBeEnabled();
+    await page.getByText("Remove background").click();
+    await expect(page.getByRole("button", { name: "Download GIF" })).toBeDisabled();
+    await expect(page.getByText("Videos and GIFs keep their background.")).toBeVisible();
+  });
+
+  test("a GIF downloads after its progress shows", async ({ page }) => {
+    await openApp(page);
+    await addTwoToneImage(page);
+    await page.evaluate(`S.getState().setMotion({ camera: "push-in", length: 2 })`);
+    await openExport(page);
+    await page.getByRole("button", { name: "ADVANCE OPTIONS" }).click();
+    await page.getByRole("combobox", { name: "GIF size" }).selectOption("small");
+    const download = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Download GIF" }).click();
+    await expect(page.getByRole("dialog", { name: "Making your GIF" })).toBeVisible();
+    expect((await download).suggestedFilename()).toMatch(/^layer-design-\d+\.gif$/);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    expect(await page.evaluate(`S.getState().previewing`)).toBe(false);
+  });
+
+  test("on the desktop, the MP4 goes to the save command as raw bytes", async ({ page }) => {
+    await fakeShell(page, `(command) => null`);
+    await openApp(page);
+    await addTwoToneImage(page);
+    await page.evaluate(`S.getState().setMotion({ camera: "rise", length: 2 })`);
+    await openExport(page);
+    await page.getByRole("button", { name: "ADVANCE OPTIONS" }).click();
+    await page.getByRole("combobox", { name: "Scale" }).selectOption("1");
+    await page.getByRole("button", { name: "Download MP4" }).click();
+    await page.waitForFunction(`CALLS.some((call) => call[0] === "export_static")`, null, { timeout: 60_000 });
+    const head = await page.evaluate(`(() => {
+      const bytes = CALLS.find((call) => call[0] === "export_static")[1];
+      return bytes instanceof Uint8Array ? String.fromCharCode(...bytes.slice(0, 64)) : null;
+    })()`);
+    expect(head).toContain("ftyp");
   });
 });
