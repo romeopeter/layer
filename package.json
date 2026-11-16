@@ -15,6 +15,7 @@
     "tauri:build": "tauri build",
     "emoji:sync": "node scripts/sync-emojis.mjs",
     "icons:sync": "node scripts/sync-icons.mjs",
+    "fonts:sync": "node scripts/sync-google-fonts.mjs",
     "devices:sync": "node scripts/sync-device-frames.mjs",
     "test": "playwright test"
   },

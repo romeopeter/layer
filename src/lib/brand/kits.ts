@@ -1,6 +1,6 @@
 import type { BackgroundState, LayerElement, WatermarkSettings } from "@/types";
 import type { PatternColorPair } from "@/types/pattern";
-import type { BrandColor, BrandImageStyle, BrandKit, BrandTextStyle } from "@/types/brand";
+import type { BrandColor, BrandFont, BrandImageStyle, BrandKit, BrandTextStyle } from "@/types/brand";
 import { SYSTEM_FONTS } from "@/lib/constants";
 import { isHex } from "@/lib/backdrops/colors";
 import { patternPairOf } from "@/lib/patterns/resolveColorPair";
@@ -40,6 +40,18 @@ export const colorOf = (kit: BrandKit, id: string | null) =>
 export const brandFamilies = (kit: BrandKit) => [
   ...new Set([kit.heading.family, kit.body.family, ...kit.fonts.map((font) => font.family)]),
 ];
+
+/** The kit's fonts with this one added, or its files added to the family already there. */
+export const withFont = (kit: BrandKit, font: BrandFont): BrandFont[] => {
+  const existing = kit.fonts.find((entry) => entry.family === font.family);
+  if (!existing) return [...kit.fonts, font];
+  const weights = new Set(font.files.map((file) => file.weight));
+  return kit.fonts.map((entry) =>
+    entry === existing
+      ? { ...entry, files: [...entry.files.filter((file) => !weights.has(file.weight)), ...font.files] }
+      : entry,
+  );
+};
 
 /** A name not already taken. */
 export const nextKitName = (kits: BrandKit[]) => {

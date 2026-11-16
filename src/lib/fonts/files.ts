@@ -1,5 +1,7 @@
 import type { FontWeight } from "@/types/brand";
 
+export const WEIGHT_NAMES: Record<FontWeight, string> = { 400: "Regular", 500: "Medium", 700: "Bold" };
+
 const MIMES: Record<string, string> = {
   woff2: "font/woff2",
   woff: "font/woff",

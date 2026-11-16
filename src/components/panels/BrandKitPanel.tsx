@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowLeft, ArrowRight, Copy, Plus, Stamp, Star, Trash2, Upload, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Copy, Plus, Search, Stamp, Star, Trash2, Upload, X } from "lucide-react";
 import { useEditor } from "@/store/editor";
-import type { BrandColor, BrandFont, BrandKit, BrandLogo, BrandTextStyle, FontWeight } from "@/types/brand";
+import type { BrandColor, BrandKit, BrandLogo, BrandTextStyle, FontWeight } from "@/types/brand";
 import { cn } from "@/lib/utils";
 import { SYSTEM_FONTS } from "@/lib/constants";
 import { fileToDataURL } from "@/lib/importers";
-import { hasBrandKitsFile } from "@/lib/host";
+import { hasBrandKitsFile, hasGoogleFonts } from "@/lib/host";
 import { backgroundThumb } from "@/lib/background/thumb";
 import { brandBackground } from "@/lib/brand/apply";
 import {
@@ -18,10 +18,11 @@ import {
   colorName,
   colorOf,
   isLayerFont,
+  withFont,
 } from "@/lib/brand/kits";
 import { isFamilyName } from "@/lib/brand/normalise";
 import { isUsableFont } from "@/lib/fonts/registry";
-import { familyFromFileName, fontMime, weightFromFileName } from "@/lib/fonts/files";
+import { WEIGHT_NAMES, familyFromFileName, fontMime, weightFromFileName } from "@/lib/fonts/files";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -29,6 +30,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ColorRow, LabeledSlider, Linebreak, MutedMini, PanelDesc, PanelHelp, SectionLabel, SwitchRow } from "./primitives";
 import { choiceClass } from "./choice";
+import { GoogleFontPicker } from "./GoogleFontPicker";
 
 /** Logos are kept whole in the kit's file, so very large ones are refused. */
 const MAX_LOGO_BYTES = 5 * 1024 * 1024;
@@ -412,20 +414,6 @@ const Colors = ({ kit }: { kit: BrandKit }) => {
 
 /* ------------------------------------------------------------------------------------------- */
 
-const WEIGHT_NAMES: Record<FontWeight, string> = { 400: "Regular", 500: "Medium", 700: "Bold" };
-
-/** A kit with one weight of a font added, or replaced if it had that weight already. */
-const withFontFile = (kit: BrandKit, font: BrandFont): BrandFont[] => {
-  const existing = kit.fonts.find((entry) => entry.family === font.family);
-  if (!existing) return [...kit.fonts, font];
-  const weights = new Set(font.files.map((file) => file.weight));
-  return kit.fonts.map((entry) =>
-    entry === existing
-      ? { ...entry, files: [...entry.files.filter((file) => !weights.has(file.weight)), ...font.files] }
-      : entry,
-  );
-};
-
 const WeightToggle = ({ value, onChange, label }: { value: FontWeight; onChange: (weight: FontWeight) => void; label: string }) => (
   <ToggleGroup
     type="single"
@@ -482,7 +470,7 @@ const FontUpload = ({ kit }: { kit: BrandKit }) => {
 
   const add = () => {
     if (!pending || nameProblem) return;
-    set({ fonts: withFontFile(kit, { family: name, source: "upload", files: [{ weight: pending.weight, src: pending.src }] }) });
+    set({ fonts: withFont(kit, { family: name, source: "upload", files: [{ weight: pending.weight, src: pending.src }] }) });
     setPending(null);
   };
 
@@ -529,6 +517,7 @@ const FontUpload = ({ kit }: { kit: BrandKit }) => {
 
 const Fonts = ({ kit }: { kit: BrandKit }) => {
   const set = useKit(kit);
+  const [googleOpen, setGoogleOpen] = useState(false);
   const remove = (family: string) =>
     set({
       fonts: kit.fonts.filter((font) => font.family !== family),
@@ -559,8 +548,17 @@ const Fonts = ({ kit }: { kit: BrandKit }) => {
           </Button>
         </div>
       ))}
+      {kit.fonts.length < MAX_BRAND_FONTS &&
+        (hasGoogleFonts ? (
+          <Button variant="outline" size="block" className="cursor-pointer" onClick={() => setGoogleOpen(true)}>
+            <Search className="h-3 w-3" /> Add from Google Fonts
+          </Button>
+        ) : (
+          <PanelHelp>Google Fonts are in the desktop app. You can upload font files here.</PanelHelp>
+        ))}
       <FontUpload kit={kit} />
       <PanelHelp>Only upload fonts you're licensed to use. They're saved in projects that use them.</PanelHelp>
+      <GoogleFontPicker kit={kit} open={googleOpen} onOpenChange={setGoogleOpen} />
     </div>
   );
 };

@@ -2,6 +2,7 @@ use tauri::Manager;
 
 mod capture;
 mod files;
+mod fonts;
 mod pixabay;
 mod saved;
 
@@ -23,6 +24,7 @@ pub fn run() {
             files::open_project,
             files::show_error,
             files::export_static,
+            fonts::google_font,
             pixabay::search_images,
             pixabay::download_image,
             saved::load_saved_backgrounds,

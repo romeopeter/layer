@@ -323,3 +323,46 @@ test("a file that isn't a font is refused, and a font named like Layer's must be
   await page.getByRole("button", { name: "Delete Inter Brand" }).click();
   await expect(panel(page).getByText("0 OF 12")).toBeVisible();
 });
+
+test("on the desktop, a Google font is tried by name, previewed, and added in every weight", async ({ page }) => {
+  const font = fontFile("x.woff2").buffer.toString("base64");
+  await fakeShell(
+    page,
+    `(command, args) => {
+      if (command !== "google_font") return null;
+      if (args.family !== "Real Font") throw "Google Fonts doesn't have that font in that weight.";
+      return Uint8Array.from(atob(${JSON.stringify(font)}), (c) => c.charCodeAt(0)).buffer;
+    }`,
+  );
+  const errors = await openApp(page, "Brand kit");
+  await setKit(page);
+  await page.getByRole("button", { name: "Add from Google Fonts" }).click();
+  const dialog = page.getByRole("dialog", { name: "Add from Google Fonts" });
+
+  await dialog.getByRole("textbox", { name: "Search Google Fonts" }).fill("Nope Font");
+  await dialog.getByRole("option", { name: "Try “Nope Font”" }).click();
+  await expect(dialog.getByText("Google Fonts doesn't have that font in that weight.")).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Add to kit" })).toBeDisabled();
+
+  await dialog.getByRole("textbox", { name: "Search Google Fonts" }).fill("Real Font");
+  await dialog.getByRole("option", { name: "Try “Real Font”" }).click();
+  await expect(dialog.getByText("Brand new visuals, ready to ship")).toBeVisible();
+  await dialog.getByRole("button", { name: "Add to kit" }).click();
+  await expect(dialog).toHaveCount(0);
+
+  const added = (await activeKit(page)) as Kit & { fonts: { family: string; source: string; files: { weight: number }[] }[] };
+  expect(added.fonts).toHaveLength(1);
+  expect(added.fonts[0]).toMatchObject({ family: "Real Font", source: "google" });
+  expect(added.fonts[0].files.map((file) => file.weight)).toEqual([400, 500, 700]);
+  await expect(panel(page).getByText("Regular, Medium, Bold · Google Fonts")).toBeVisible();
+  // Each weight was asked for once, though Regular was also the preview.
+  expect((await shellCalls(page, "google_font")).filter((call) => call.family === "Real Font")).toHaveLength(3);
+  expect(errors).toEqual([]);
+});
+
+test("in the browser, Google Fonts point to the desktop app", async ({ page }) => {
+  await openApp(page, "Brand kit");
+  await setKit(page);
+  await expect(page.getByText("Google Fonts are in the desktop app.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add from Google Fonts" })).toHaveCount(0);
+});

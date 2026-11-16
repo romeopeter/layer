@@ -202,3 +202,26 @@ export const storeBrandKits = async (file: unknown) => {
     throw new Error(String(error), { cause: error });
   }
 };
+
+/** Google Fonts come through the desktop shell, so the webview never talks to Google. */
+export const hasGoogleFonts = isTauri;
+
+const dataUrlOf = (blob: Blob) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+
+/** One weight of a Google font, as a `data:` URL. Fails with a message written for the user. */
+export const downloadGoogleFont = async (family: string, weight: 400 | 500 | 700): Promise<string> => {
+  if (!isTauri) throw new Error("Google Fonts are in the desktop app.");
+  const { invoke } = await invokeCore();
+  try {
+    const bytes = await invoke<ArrayBuffer>("google_font", { family, weight });
+    return await dataUrlOf(new Blob([bytes], { type: "font/ttf" }));
+  } catch (error) {
+    throw new Error(String(error), { cause: error });
+  }
+};
