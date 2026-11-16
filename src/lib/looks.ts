@@ -1,4 +1,4 @@
-import type { BackgroundState, LayerElement } from "@/types";
+import type { BackgroundState, ImageElement, LayerElement, TextElement } from "@/types";
 import { BACKDROP_PRESETS } from "@/lib/backdrops/presets";
 import { NO_EFFECTS } from "@/lib/background/effects";
 
@@ -93,18 +93,18 @@ export const lookBackground = (look: DesignLook, current: BackgroundState): Back
   effects: NO_EFFECTS,
 });
 
-/** An element dressed in a look. Framed images keep the frame's own edges. */
+/** Text set another way. Its size, place and wording stay. */
+export const styleText = (el: TextElement, style: Partial<DesignLook["text"]>): TextElement => ({ ...el, ...style });
+
+/** An image's corners and shadow. Framed images keep the frame's own edges. */
+export const styleImage = (el: ImageElement, cornerShare: number, shadow: Shadow): ImageElement =>
+  el.deviceFrame
+    ? { ...el, shadow }
+    : { ...el, cornerRadius: Math.round(cornerShare * Math.min(el.width, el.height)), shadow };
+
+/** An element dressed in a look. */
 export const inLook = (look: DesignLook, el: LayerElement): LayerElement => {
-  if (el.type === "text") {
-    return { ...el, ...look.text };
-  }
-  if (el.type === "image") {
-    if (el.deviceFrame) return { ...el, shadow: look.image.shadow };
-    return {
-      ...el,
-      cornerRadius: Math.round(look.image.cornerShare * Math.min(el.width, el.height)),
-      shadow: look.image.shadow,
-    };
-  }
+  if (el.type === "text") return styleText(el, look.text);
+  if (el.type === "image") return styleImage(el, look.image.cornerShare, look.image.shadow);
   return el;
 };

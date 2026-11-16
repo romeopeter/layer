@@ -22,6 +22,7 @@ import type {
 import type { PatternColorPair, PatternConfig } from "../types/pattern";
 import { DEFAULT_PATTERN_CONFIG } from "../types/pattern";
 import type { BackdropLook } from "../types/backdrop";
+import type { BrandKit, BrandKitsFile } from "../types/brand";
 import { DEFAULT_BACKDROP } from "../lib/backdrops/presets";
 import { NO_EFFECTS } from "../lib/background/effects";
 import { DEFAULT_GRADIENT, normaliseBackground } from "../lib/background/normalise";
@@ -34,8 +35,10 @@ import {
   type BackgroundLook,
   type ShuffleMode,
 } from "../lib/background/looks";
-import { storeSavedBackgrounds } from "../lib/host";
-import { DEFAULT_WATERMARK, normaliseWatermark } from "../lib/watermark";
+import { storeBrandKits, storeSavedBackgrounds } from "../lib/host";
+import { DEFAULT_WATERMARK, marginOf, normaliseWatermark } from "../lib/watermark";
+import { brandId, kitFromDesign, nextKitName } from "../lib/brand/kits";
+import { brandPatch } from "../lib/brand/apply";
 import { inLook, lookBackground, type DesignLook } from "../lib/looks";
 import { migrateElement, nextNumber } from "../lib/marks";
 import { placeFrame } from "../lib/mockups";
@@ -152,6 +155,10 @@ interface EditorState {
   lookTrails: Partial<Record<ShuffleMode, LookTrail>>;
   /** Backgrounds kept to use again in any project. Not part of the project. */
   savedBackgrounds: SavedBackground[];
+  /** Brands' logos, colours and fonts, for any project. Not part of the project or of undo. */
+  brandKits: BrandKit[];
+  /** The kit the rest of the editor offers: its colours in pickers, its fonts first. */
+  activeBrandKitId: string | null;
   /** Transient: what a canvas drag creates. Null means it selects and moves. */
   markTool: MarkTool | null;
   /** Style for the next mark, by category. Lasts the session, not the project. */
@@ -191,6 +198,16 @@ interface EditorState {
   deleteSavedBackground: (id: string) => void;
   /** Fills the list from the saved file, at launch. */
   setSavedBackgrounds: (list: SavedBackground[]) => void;
+  /** Fills the kits from the saved file, at launch, keeping any made since. */
+  setBrandKits: (file: BrandKitsFile) => void;
+  /** Starts a kit from the open design, and makes it the active one. */
+  createBrandKit: () => string;
+  duplicateBrandKit: (id: string) => void;
+  updateBrandKit: (id: string, patch: Partial<Omit<BrandKit, "id" | "updatedAt">>) => void;
+  deleteBrandKit: (id: string) => void;
+  setActiveBrandKit: (id: string) => void;
+  /** Puts the whole design in a brand, as one undo step. */
+  applyBrand: (id: string) => void;
   /** Changes Layer's badge. */
   setBadge: (patch: Partial<WatermarkSettings["badge"]>) => void;
   /** Changes the user's own watermark. */
@@ -208,6 +225,8 @@ interface EditorState {
 
   // elements
   addImage: (src: string, naturalWidth: number, naturalHeight: number) => string;
+  /** A logo: small, at the top left, with no corners or shadow, and outside any layout. */
+  addLogo: (src: string, naturalWidth: number, naturalHeight: number) => string;
   /** Records a picture's size once loaded, for images saved without it. Not an edit. */
   setNaturalSize: (id: string, width: number, height: number) => void;
   setLayout: (id: LayoutId | null) => void;
@@ -264,6 +283,8 @@ export const useEditor = create<EditorState>((set, get) => ({
   patternDragging: false,
   lookTrails: {},
   savedBackgrounds: [],
+  brandKits: [],
+  activeBrandKitId: null,
   markTool: null,
   markStyles: DEFAULT_MARK_STYLES,
   editingId: null,
@@ -381,6 +402,63 @@ export const useEditor = create<EditorState>((set, get) => ({
 
   setSavedBackgrounds: (list) => set({ savedBackgrounds: list }),
 
+  setBrandKits: (file) => {
+    // Kits made before the file finished loading are kept, after the saved ones.
+    const { brandKits, activeBrandKitId } = get();
+    const saved = new Set(file.kits.map((kit) => kit.id));
+    const made = brandKits.filter((kit) => !saved.has(kit.id));
+    set({ brandKits: [...file.kits, ...made], activeBrandKitId: activeBrandKitId ?? file.activeId });
+    if (made.length > 0) saveBrandKitsSoon();
+  },
+
+  createBrandKit: () => {
+    const { brandKits, background, elements, watermark, customPatternPairs } = get();
+    const kit = kitFromDesign({ background, elements, watermark, customPatternPairs }, nextKitName(brandKits));
+    set({ brandKits: [...brandKits, kit], activeBrandKitId: kit.id });
+    saveBrandKitsSoon();
+    return kit.id;
+  },
+
+  duplicateBrandKit: (id) => {
+    const { brandKits } = get();
+    const source = brandKits.find((kit) => kit.id === id);
+    if (!source) return;
+    const copy: BrandKit = { ...source, id: brandId("bk"), name: `${source.name} copy`, updatedAt: Date.now() };
+    const at = brandKits.indexOf(source) + 1;
+    set({ brandKits: [...brandKits.slice(0, at), copy, ...brandKits.slice(at)], activeBrandKitId: copy.id });
+    saveBrandKitsSoon();
+  },
+
+  updateBrandKit: (id, patch) => {
+    set({
+      brandKits: get().brandKits.map((kit) => (kit.id === id ? { ...kit, ...patch, updatedAt: Date.now() } : kit)),
+    });
+    saveBrandKitsSoon();
+  },
+
+  deleteBrandKit: (id) => {
+    const { brandKits, activeBrandKitId } = get();
+    const at = brandKits.findIndex((kit) => kit.id === id);
+    if (at === -1) return;
+    const next = brandKits.filter((kit) => kit.id !== id);
+    // The one beside it takes over, so the panel doesn't jump to the start.
+    const active = activeBrandKitId === id ? (next[Math.min(at, next.length - 1)]?.id ?? null) : activeBrandKitId;
+    set({ brandKits: next, activeBrandKitId: active });
+    saveBrandKitsSoon();
+  },
+
+  setActiveBrandKit: (id) => {
+    if (!get().brandKits.some((kit) => kit.id === id)) return;
+    set({ activeBrandKitId: id });
+    saveBrandKitsSoon();
+  },
+
+  applyBrand: (id) => {
+    const { brandKits, background, elements, watermark } = get();
+    const kit = brandKits.find((entry) => entry.id === id);
+    if (kit) set(brandPatch(kit, { background, elements, watermark }));
+  },
+
   setBadge: (patch) => {
     const { watermark } = get();
     set({ watermark: { ...watermark, badge: { ...watermark.badge, ...patch } } });
@@ -459,6 +537,32 @@ export const useEditor = create<EditorState>((set, get) => ({
         ? { layout: { ...layout, slots: layout.slots.map((slot, i) => (i === free ? { id: el.id } : slot)) } }
         : {}),
     });
+    return el.id;
+  },
+
+  addLogo: (src, naturalWidth, naturalHeight) => {
+    const { canvas, elements } = get();
+    const shorter = Math.min(canvas.width, canvas.height);
+    const ratio = Math.min((canvas.width * 0.3) / naturalWidth, (shorter * 0.2) / naturalHeight);
+    const margin = marginOf(canvas) * 2;
+    const el: ImageElement = {
+      id: uid(),
+      type: "image",
+      x: margin,
+      y: margin,
+      width: naturalWidth * ratio,
+      height: naturalHeight * ratio,
+      rotation: 0,
+      opacity: 1,
+      src,
+      naturalWidth,
+      naturalHeight,
+      deviceFrame: null,
+      cornerRadius: 0,
+      shadow: { enabled: false, color: "rgba(0,0,0,0.45)", blur: 60, offsetX: 0, offsetY: 30 },
+      transform: "rotate3d(0deg, 0deg, 0deg)",
+    };
+    set({ elements: [...elements, el], selectedIds: [el.id] });
     return el.id;
   },
 
@@ -787,6 +891,21 @@ export const useEditor = create<EditorState>((set, get) => ({
     history.reset();
   },
 }));
+
+/** How long kit changes wait before they're written: a colour picker changes many times a second. */
+const BRAND_SAVE_DELAY = 400;
+let brandSave: ReturnType<typeof setTimeout> | undefined;
+
+/** Writes the kits to their file, once changes stop. Kits with fonts in them run to megabytes. */
+const saveBrandKitsSoon = () => {
+  clearTimeout(brandSave);
+  brandSave = setTimeout(() => {
+    const { brandKits, activeBrandKitId } = useEditor.getState();
+    void storeBrandKits({ version: 1, activeId: activeBrandKitId, kits: brandKits }).catch((error) =>
+      console.error(error),
+    );
+  }, BRAND_SAVE_DELAY);
+};
 
 const documentOf = ({
   canvas,

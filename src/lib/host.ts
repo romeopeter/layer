@@ -175,3 +175,30 @@ export const storeSavedBackgrounds = async (list: unknown[]) => {
     throw new Error(String(error), { cause: error });
   }
 };
+
+/**
+ * Brand kits live in a file in the app's data folder on the desktop, until SQLite
+ * lands, like saved backgrounds. The web build keeps them for the session only.
+ */
+export const hasBrandKitsFile = isTauri;
+
+/** What's in the file, unchecked: the caller normalises it. Null on the web or if it can't be read. */
+export const loadBrandKits = async (): Promise<unknown> => {
+  if (!isTauri) return null;
+  const { invoke } = await invokeCore();
+  try {
+    return JSON.parse(await invoke<string>("load_brand_kits"));
+  } catch {
+    return null;
+  }
+};
+
+export const storeBrandKits = async (file: unknown) => {
+  if (!isTauri) return;
+  const { invoke } = await invokeCore();
+  try {
+    await invoke("store_brand_kits", { kits: JSON.stringify(file) });
+  } catch (error) {
+    throw new Error(String(error), { cause: error });
+  }
+};

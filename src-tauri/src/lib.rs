@@ -27,6 +27,8 @@ pub fn run() {
             pixabay::download_image,
             saved::load_saved_backgrounds,
             saved::store_saved_backgrounds,
+            saved::load_brand_kits,
+            saved::store_brand_kits,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Layer");

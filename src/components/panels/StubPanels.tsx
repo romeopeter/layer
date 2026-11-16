@@ -1,6 +1,4 @@
-import {
-  Lock, Sparkles, Image as Play,
-} from "lucide-react";
+import { Sparkles, Image as Play } from "lucide-react";
 import { useEditor } from "@/store/editor";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/input";
@@ -32,34 +30,6 @@ export const AiPanel = () => (
         >
           {q}
         </button>
-      ))}
-    </div>
-  </div>
-);
-
-export const BrandsPanel = () => (
-  <div className="flex flex-col gap-2.5 px-4 pb-6 pt-4">
-    <PanelTitle badge={<Phase2Tag />}>BRANDS</PanelTitle>
-    <PanelDesc>Save brand colors, logos, fonts as one-click presets in Phase 2.</PanelDesc>
-    <SectionLabel>SAMPLE BRANDS</SectionLabel>
-    <div className="flex flex-col gap-1.5 opacity-55">
-      {["Acme Co.", "Vela", "Northpeak"].map((n, i) => (
-        <div
-          key={n}
-          className="flex items-center gap-2.5 rounded-lg border border-hairline bg-chrome/30 px-2.5 py-2"
-        >
-          <div
-            className="flex h-7 w-7 items-center justify-center rounded-md font-display font-bold text-white"
-            style={{ background: ["#534AB7", "#1D9E75", "#EF9F27"][i] }}
-          >
-            {n.slice(0, 1)}
-          </div>
-          <div className="flex-1">
-            <div className="text-xs font-medium text-text">{n}</div>
-            <div className="text-[10.5px] text-text-faint">3 colors · 2 fonts</div>
-          </div>
-          <Lock className="h-3 w-3 text-a-200" />
-        </div>
       ))}
     </div>
   </div>
