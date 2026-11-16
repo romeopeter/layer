@@ -1,4 +1,4 @@
-import { Sparkles, Image as Play } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import { useEditor } from "@/store/editor";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/input";
@@ -31,18 +31,6 @@ export const AiPanel = () => (
           {q}
         </button>
       ))}
-    </div>
-  </div>
-);
-
-export const MotionPanel = () => (
-  <div className="flex flex-col gap-2.5 px-4 pb-6 pt-4">
-    <PanelTitle badge={<Phase2Tag />}>MOTION</PanelTitle>
-    <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-hairline-strong bg-chrome/40 px-4 py-6 text-center text-[11.5px] text-text-faint">
-      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-p-200/[0.08] text-p-300">
-        <Play className="h-4 w-4" />
-      </div>
-      <p className="m-0 leading-[1.5]">Per-element animation, MP4 + Lottie export ship in Phase 2.</p>
     </div>
   </div>
 );

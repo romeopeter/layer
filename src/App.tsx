@@ -9,6 +9,8 @@ import { LeftRail } from "@/components/LeftRail";
 import { PanelHost } from "@/components/panels";
 import { PropertiesPanel } from "@/components/properties/PropertiesPanel";
 import { CanvasStage } from "@/components/canvas/CanvasStage";
+import { PlayBar } from "@/components/canvas/PlayBar";
+import { playback } from "@/lib/motion/playback";
 import { GridControl } from "@/components/canvas/GridControl";
 import { SocialPreviewModal } from "@/components/SocialPreviewModal";
 import { CustomizeSidebarModal } from "@/components/CustomizeSidebarModal";
@@ -106,6 +108,7 @@ export const App = () => {
       } else if (e.key === "Escape") {
         setPreviewOpen(false);
         setCustomizeOpen(false);
+        playback.stop();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -189,8 +192,9 @@ export const App = () => {
             <div className="pointer-events-none absolute inset-3 z-50 flex items-center justify-center rounded-2xl border-2 border-dashed border-p-300 bg-p-600/8 text-sm font-medium text-text" />
           )}
 
-          {/* Zoom buttons */}
-          <div className="absolute bottom-23 left-4 z-6 flex items-center gap-1 rounded-lg border border-hairline bg-panel p-1">
+          {/* Zoom, grid and play: how you look at the canvas. None of them exports. */}
+          <div className="absolute bottom-23 left-4 z-6 flex items-center gap-2">
+          <div className="flex items-center gap-1 rounded-lg border border-hairline bg-panel p-1">
             <button
               type="button"
               title="Zoom out"
@@ -221,6 +225,8 @@ export const App = () => {
                 the canvas, and neither appears in an export. */}
             <div className="mx-0.5 h-4.5 w-px bg-hairline" />
             <GridControl />
+          </div>
+          <PlayBar />
           </div>
 
           {/* Paste, Export and Delete */}

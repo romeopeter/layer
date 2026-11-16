@@ -10,7 +10,8 @@ import { WatermarkPanel } from "./WatermarkPanel";
 import { ImagesPanel } from "./ImagesPanel";
 import { LayoutPanel } from "./LayoutPanel";
 import { TemplatesPanel } from "./TemplatesPanel";
-import { AiPanel, MotionPanel, CustomizePanel } from "./StubPanels";
+import { AiPanel, CustomizePanel } from "./StubPanels";
+import { AnimatePanel } from "./AnimatePanel";
 import { BrandKitPanel } from "./BrandKitPanel";
 import { PanelTitle } from "./primitives";
 
@@ -44,7 +45,7 @@ const View = ({ activeTool, onOpenCustomizeModal }: Props) => {
     case "brands":
       return <BrandKitPanel />;
     case "motion":
-      return <MotionPanel />;
+      return <AnimatePanel />;
     case "customize":
       return <CustomizePanel onOpenModal={onOpenCustomizeModal} />;
     default:

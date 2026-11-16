@@ -23,6 +23,7 @@ import type { PatternColorPair, PatternConfig } from "../types/pattern";
 import { DEFAULT_PATTERN_CONFIG } from "../types/pattern";
 import type { BackdropLook } from "../types/backdrop";
 import type { BrandKit, BrandKitsFile } from "../types/brand";
+import type { DesignMotion, ElementMotion, EnterMove, ZoomSpot } from "../types/motion";
 import { DEFAULT_BACKDROP } from "../lib/backdrops/presets";
 import { NO_EFFECTS } from "../lib/background/effects";
 import { DEFAULT_GRADIENT, normaliseBackground } from "../lib/background/normalise";
@@ -54,6 +55,15 @@ import {
   settleLayout,
   withoutLayoutCrop,
 } from "../lib/layouts";
+import {
+  DEFAULT_ELEMENT_MOTION,
+  DEFAULT_MOTION,
+  MAX_SPOTS,
+  MAX_SPOT_ZOOM,
+  MIN_SPOT_ZOOM,
+  normaliseElementMotion,
+  normaliseMotion,
+} from "../lib/motion/normalise";
 import { createHistory } from "./history";
 
 /* ------------------------------------------------------- */
@@ -138,6 +148,10 @@ interface EditorState {
   selectedIds: string[];
   /** Null means images are placed by hand. */
   layout: CanvasLayout | null;
+  /** How the whole design is animated. Each object's own moves are on the object. */
+  motion: DesignMotion;
+  /** Transient: the canvas shows a moment of the animation and can't be edited. See `playback.ts`. */
+  previewing: boolean;
 
   activeTool: Tool;
   /** Whether the left panel is showing. Clicking the active rail group hides it. */
@@ -221,6 +235,18 @@ interface EditorState {
   setMarkStyle: (category: MarkCategory, patch: Partial<ShapeElement>) => void;
   setEditingId: (id: string | null) => void;
   setCropId: (id: string | null) => void;
+  /** Changes how the whole design is animated. */
+  setMotion: (patch: Partial<DesignMotion>) => void;
+  /** Adds a zoom spot framing the selected object, or the middle. Returns its id. */
+  addZoomSpot: () => string | null;
+  updateZoomSpot: (id: string, patch: Partial<Omit<ZoomSpot, "id">>) => void;
+  removeZoomSpot: (id: string) => void;
+  /** Changes one object's own moves. */
+  setElementMotion: (id: string, patch: Partial<ElementMotion>) => void;
+  /** Gives these objects the same way in, one after another in stacking order, as one undo step. */
+  bringInOneByOne: (ids: string[], enter: EnterMove) => void;
+  /** Takes every object's own moves off, as one undo step. */
+  clearElementMotion: () => void;
   undo: () => void;
   redo: () => void;
 
@@ -267,6 +293,23 @@ interface EditorState {
 
 const FIT_PASSES = 8;
 
+/** Seconds between objects brought in one by one. */
+const STAGGER = 0.2;
+
+/** The object with no moves of its own. */
+const withoutMotion = (el: LayerElement): LayerElement => {
+  if (!el.motion) return el;
+  const copy = { ...el };
+  delete copy.motion;
+  return copy;
+};
+
+/** An object's moves from a file, checked, or none. */
+const withNormalMotion = (el: LayerElement): LayerElement => {
+  const motion = normaliseElementMotion(el.motion);
+  return motion ? { ...el, motion } : withoutMotion(el);
+};
+
 export const useEditor = create<EditorState>((set, get) => ({
   canvas: DEFAULT_CANVAS,
   background: DEFAULT_BACKGROUND,
@@ -275,6 +318,8 @@ export const useEditor = create<EditorState>((set, get) => ({
   customPatternPairs: [],
   selectedIds: [],
   layout: null,
+  motion: DEFAULT_MOTION,
+  previewing: false,
 
   activeTool: "images",
   leftPanelOpen: true,
@@ -490,8 +535,81 @@ export const useEditor = create<EditorState>((set, get) => ({
 
   setEditingId: (id) => set({ editingId: id }),
   setCropId: (id) => set({ cropId: id, editingId: null }),
-  undo: () => history.undo(),
-  redo: () => history.redo(),
+
+  setMotion: (patch) => set({ motion: { ...get().motion, ...patch } }),
+
+  addZoomSpot: () => {
+    const { motion, canvas, elements, selectedIds } = get();
+    if (motion.spots.length >= MAX_SPOTS) return null;
+    const target = elements.find((el) => el.id === selectedIds[0] && !el.hidden);
+    // Framing the selected object with a little room round it, or the middle at twice the size.
+    const spot: ZoomSpot = target
+      ? {
+          id: "spot_" + Math.random().toString(36).slice(2, 9),
+          cx: (target.x + target.width / 2) / canvas.width,
+          cy: (target.y + target.height / 2) / canvas.height,
+          zoom: Math.min(
+            MAX_SPOT_ZOOM,
+            Math.max(
+              MIN_SPOT_ZOOM,
+              Math.min(canvas.width / (target.width * 1.3), canvas.height / (target.height * 1.3)),
+            ),
+          ),
+        }
+      : { id: "spot_" + Math.random().toString(36).slice(2, 9), cx: 0.5, cy: 0.5, zoom: 2 };
+    set({ motion: { ...motion, spots: [...motion.spots, spot] } });
+    return spot.id;
+  },
+
+  updateZoomSpot: (id, patch) => {
+    const { motion } = get();
+    set({ motion: { ...motion, spots: motion.spots.map((spot) => (spot.id === id ? { ...spot, ...patch } : spot)) } });
+  },
+
+  removeZoomSpot: (id) => {
+    const { motion } = get();
+    set({ motion: { ...motion, spots: motion.spots.filter((spot) => spot.id !== id) } });
+  },
+
+  setElementMotion: (id, patch) =>
+    set({
+      elements: get().elements.map((el) => {
+        if (el.id !== id) return el;
+        const next = { ...DEFAULT_ELEMENT_MOTION, ...el.motion, ...patch };
+        // No moves at all is the same as none, so a file stays as it was.
+        if (next.enter === "none" && next.keep === "none") return withoutMotion(el);
+        return { ...el, motion: next } as LayerElement;
+      }),
+    }),
+
+  bringInOneByOne: (ids, enter) => {
+    const chosen = new Set(ids);
+    let order = 0;
+    set({
+      elements: get().elements.map((el) => {
+        if (!chosen.has(el.id) || el.hidden) return el;
+        const motion: ElementMotion = {
+          ...DEFAULT_ELEMENT_MOTION,
+          ...el.motion,
+          enter,
+          start: Math.round(order * STAGGER * 10) / 10,
+        };
+        order += 1;
+        return { ...el, motion } as LayerElement;
+      }),
+    });
+  },
+
+  clearElementMotion: () => set({ elements: get().elements.map(withoutMotion) }),
+  // Undo is an edit, so it ends a preview first: the canvas shows the design at rest.
+  undo: () => {
+    if (get().previewing) set({ previewing: false });
+    history.undo();
+  },
+  redo: () => {
+    if (get().previewing) set({ previewing: false });
+    history.redo();
+  },
 
   addCustomPatternPair: (base, accent, label) => {
     const pair: PatternColorPair = {
@@ -864,8 +982,10 @@ export const useEditor = create<EditorState>((set, get) => ({
       // settings where they used to live.
       background: normaliseBackground(project.background, DEFAULT_BACKGROUND),
       lookTrails: {},
-      elements: project.elements.map(migrateElement),
+      elements: project.elements.map(migrateElement).map(withNormalMotion),
       watermark: normaliseWatermark(project.watermark),
+      motion: normaliseMotion(project.motion),
+      previewing: false,
       layout:
         project.layout && layoutOf(project.layout.id) && Array.isArray(project.layout.slots)
           ? project.layout
@@ -876,7 +996,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   },
 
   toProject: () => {
-    const { canvas, background, elements, watermark, layout } = get();
+    const { canvas, background, elements, watermark, layout, motion } = get();
     // Fonts that aren't Layer's own go with the project, so it opens the same anywhere.
     const families = new Set(
       elements.flatMap((el) => (el.type === "text" && !isLayerFont(el.fontFamily) ? [el.fontFamily] : [])),
@@ -889,6 +1009,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       elements,
       watermark,
       layout,
+      motion,
       ...(fonts.length > 0 ? { fonts } : {}),
     };
   },
@@ -903,6 +1024,8 @@ export const useEditor = create<EditorState>((set, get) => ({
       lookTrails: {},
       elements: [],
       layout: null,
+      motion: DEFAULT_MOTION,
+      previewing: false,
       selectedIds: [],
     });
     history.reset();
@@ -931,7 +1054,9 @@ const documentOf = ({
   uploadedImages,
   layout,
   watermark,
+  motion,
 }: EditorState) => ({
+  motion,
   canvas,
   background,
   elements,
@@ -976,7 +1101,8 @@ useEditor.subscribe((state, previous) => {
     state.layout !== previous.layout ||
     state.background !== previous.background ||
     state.canvas !== previous.canvas ||
-    state.watermark !== previous.watermark
+    state.watermark !== previous.watermark ||
+    state.motion !== previous.motion
   ) {
     history.changed();
   }

@@ -1,5 +1,6 @@
 import type { PatternConfig } from "./pattern";
 import type { BackdropLook } from "./backdrop";
+import type { DesignMotion, ElementMotion } from "./motion";
 
 export type ElementKind = "image" | "text" | "shape" | "icon";
 
@@ -92,6 +93,8 @@ export interface BaseElement {
     color: string;
     width: number;
   };
+  /** How it comes in and keeps moving when the design is animated. Absent stays still. */
+  motion?: ElementMotion;
 }
 
 export interface ImageCrop {
@@ -377,4 +380,6 @@ export interface LayerProject {
   layout?: CanvasLayout | null;
   /** Fonts its text uses that aren't Layer's own. Absent when there are none. */
   fonts?: ProjectFont[];
+  /** The design's animation. Absent in projects saved before Animate, which stay still. */
+  motion?: DesignMotion;
 }

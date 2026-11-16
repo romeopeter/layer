@@ -2,7 +2,6 @@ import { useRef } from "react";
 import { Maximize, Upload, Paintbrush } from "lucide-react";
 import { useEditor } from "@/store/editor";
 import type { CanvasLayout, LayoutAlign, LayoutId } from "@/types";
-import { cn } from "@/lib/utils";
 import { importImageFile } from "@/lib/importers";
 import {
   arrangeLayout,
@@ -21,7 +20,7 @@ import {
   SectionLabel,
   SwitchRow,
 } from "./primitives";
-import { choiceClass } from "./choice";
+import { ChoiceTile } from "./ChoiceTile";
 
 const PREVIEW = { width: 44, height: 32 };
 
@@ -86,32 +85,6 @@ const LayoutPreview = ({ id }: { id: LayoutId }) => {
   );
 };
 
-const Tile = ({
-  label,
-  active,
-  onClick,
-  children,
-}: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-  children?: React.ReactNode;
-}) => (
-  <button
-    type="button"
-    aria-pressed={active}
-    onClick={onClick}
-    className={cn(
-      "flex min-h-16 cursor-pointer flex-col items-center justify-center gap-1 rounded-md border p-1.5 text-center text-[9.5px] leading-tight transition-colors hover:text-text",
-      choiceClass(active),
-      active ? "text-text" : "text-text-muted",
-    )}
-  >
-    {children}
-    <span>{label}</span>
-  </button>
-);
-
 export const LayoutPanel = () => {
   const layout = useEditor((s) => s.layout);
   const selectedIds = useEditor((s) => s.selectedIds);
@@ -146,11 +119,11 @@ export const LayoutPanel = () => {
       <div className="space-y-2">
         <SectionLabel>PICK A LAYOUT</SectionLabel>
         <div className="grid grid-cols-3 gap-1.5">
-          <Tile label="None" active={!layout} onClick={() => setLayout(null)} />
+          <ChoiceTile label="None" active={!layout} onClick={() => setLayout(null)} />
           {LAYOUTS.map(({ id, label }) => (
-            <Tile key={id} label={label} active={layout?.id === id} onClick={() => setLayout(id)}>
+            <ChoiceTile key={id} label={label} active={layout?.id === id} onClick={() => setLayout(id)}>
               <LayoutPreview id={id} />
-            </Tile>
+            </ChoiceTile>
           ))}
         </div>
       </div>

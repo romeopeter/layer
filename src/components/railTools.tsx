@@ -67,7 +67,7 @@ export const RAIL_GROUPS: RailGroup[] = [
   {
     key: "animate",
     label: "Animate",
-    hint: "Motion for elements and text",
+    hint: "Bring the design to life: camera, objects, zoom and live backgrounds",
     icon: <Play className="h-4.5 w-4.5" />,
     tabs: [{ key: "motion", label: "Animate" }],
   },

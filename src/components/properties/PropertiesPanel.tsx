@@ -16,6 +16,8 @@ import { layerName } from "@/lib/layerNames";
 import { layoutOf } from "@/lib/layouts";
 import { activeKit } from "@/lib/brand/kits";
 import { DEVICES } from "@/lib/mockups";
+import { CAMERA_MOVES, labelOf } from "@/lib/motion/moves";
+import { hasMotion, movesOnItsOwn } from "@/lib/motion/normalise";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { CanvasSizePicker } from "@/components/CanvasSizePicker";
@@ -223,6 +225,17 @@ const ShapeProperties = ({ shape }: { shape: ShapeElement }) => {
   );
 };
 
+/** The design's animation in a few words, such as "Push in · 6s · 3 objects". */
+const animationSummary = (s: ReturnType<typeof useEditor.getState>) => {
+  if (!hasMotion(s.motion, s.elements, s.background)) return "No motion";
+  const objects = s.elements.filter(movesOnItsOwn).length;
+  return [
+    labelOf(CAMERA_MOVES, s.motion.camera),
+    `${s.motion.length}s`,
+    ...(objects > 0 ? [objects === 1 ? "1 object" : `${objects} objects`] : []),
+  ].join(" · ");
+};
+
 const CanvasProperties = () => {
   const canvas = useEditor((s) => s.canvas);
   const background = useEditor((s) => s.background);
@@ -231,6 +244,7 @@ const CanvasProperties = () => {
   const watermark = useEditor((s) => s.watermark);
   const kit = useEditor(activeKit);
   const setActiveTool = useEditor((s) => s.setActiveTool);
+  const motionSummary = useEditor(animationSummary);
   const [sizeOpen, setSizeOpen] = useState(false);
 
   const backgroundName = {
@@ -285,6 +299,9 @@ const CanvasProperties = () => {
           action="Edit"
           onClick={() => setActiveTool("watermark")}
         />
+      </PropertySection>
+      <PropertySection id="canvas.animate" title="Animate">
+        <Jump value={motionSummary} action="Open Animate" onClick={() => setActiveTool("motion")} />
       </PropertySection>
       <PropertySection id="canvas.brand" title="Brand">
         <Jump

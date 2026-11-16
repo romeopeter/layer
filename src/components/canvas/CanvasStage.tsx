@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Stage, Layer, Transformer } from "react-konva";
+import { Stage, Layer, Transformer, Group } from "react-konva";
 import Konva from "konva";
 import { useEditor } from "../../store/editor";
 import { Background } from "./Background";
@@ -35,6 +35,8 @@ import { importImageFile } from "../../lib/importers";
 import type { LayerElement, TextElement } from "@/types";
 import { MIN_FRAME_SIZE } from "@/lib/constants";
 import { FIXED_RATIO_SHAPES } from "@/lib/marks";
+import { BACKGROUND_CAMERA_NAME, CAMERA_GROUP_NAME } from "@/lib/motion/pose";
+import { playback } from "@/lib/motion/playback";
 
 /* ------------------------------------------------------------------------ */
 
@@ -110,6 +112,8 @@ export const CanvasStage = () => {
   const snapEnabled = useEditor((s) => s.snapEnabled);
   const watermark = useEditor((s) => s.watermark);
   const markTool = useEditor((s) => s.markTool);
+  // Showing a moment of the animation: view-only until it's stopped.
+  const previewing = useEditor((s) => s.previewing);
   const editingId = useEditor((s) => s.editingId);
   const cropId = useEditor((s) => s.cropId);
   const setCropId = useEditor((s) => s.setCropId);
@@ -260,6 +264,11 @@ export const CanvasStage = () => {
   ) => {
     const target = e.target as Konva.Node;
 
+    // A click on a preview goes back to editing, with everything where it was.
+    if (useEditor.getState().previewing) {
+      playback.stop();
+      return;
+    }
     if (isTransformerTarget(target)) return;
     if (target.getLayer()?.name() === MARK_HANDLES_LAYER_NAME) return;
     // Crop mode ends with Apply or Cancel, not a stray click.
@@ -428,6 +437,7 @@ export const CanvasStage = () => {
         : ALL_ANCHORS;
 
   const handleElement =
+    !previewing &&
     selectedElement?.type === "shape" &&
     !selectedElement.locked &&
     !selectedElement.hidden &&
@@ -438,6 +448,7 @@ export const CanvasStage = () => {
       : null;
 
   const selectedToolbarElement =
+    !previewing &&
     (selectedElement?.type === "image" || selectedElement?.type === "text") &&
     !selectedElement.locked &&
     !selectedElement.hidden &&
@@ -526,11 +537,14 @@ export const CanvasStage = () => {
         >
           {/* Background layer - non-interactive. Named so export can leave it out. */}
           <Layer name={BACKGROUND_LAYER_NAME} listening={false}>
-            <Background
-              bg={background}
-              width={canvas.width}
-              height={canvas.height}
-            />
+            {/* Filmed with the design, or with depth, moving less. See lib/motion/pose.ts. */}
+            <Group name={BACKGROUND_CAMERA_NAME}>
+              <Background
+                bg={background}
+                width={canvas.width}
+                height={canvas.height}
+              />
+            </Group>
           </Layer>
 
           {/* Main content layer - elements, transformer, and watermark.
@@ -539,11 +553,14 @@ export const CanvasStage = () => {
               repeating the snap logic in each of them. */}
           <Layer
             name={CONTENT_LAYER_NAME}
-            listening={!markTool && !cropElement}
+            listening={!markTool && !cropElement && !previewing}
             onDragStart={onElementDragStart}
             onDragMove={onElementDragMove}
             onDragEnd={onElementDragEnd}
           >
+            {/* The camera: still while editing, moved by an animation's pose.
+                The watermark and the Transformer stay outside it. */}
+            <Group name={CAMERA_GROUP_NAME}>
             {/* Render all canvas elements based on type */}
             {elements.map((el) => {
               const isSelected = selectedIds.includes(el.id);
@@ -585,10 +602,12 @@ export const CanvasStage = () => {
             })}
 
             {arrangement && <LayoutDecorNodes arrangement={arrangement} />}
+            </Group>
 
             {/* Transform handles for selected elements */}
             <Transformer
               ref={transformerRef}
+              visible={!previewing}
               rotateEnabled={!selectionInLayout}
               keepRatio={fixedRatio}
               enabledAnchors={selectionInLayout ? [] : anchors}
@@ -630,7 +649,7 @@ export const CanvasStage = () => {
             <MarkHandles el={handleElement} scale={scale} guidesRef={guidesRef} />
           )}
 
-          {arrangement && !markTool && !cropElement && (
+          {arrangement && !markTool && !cropElement && !previewing && (
             <LayoutSlotsLayer
               arrangement={arrangement}
               dropSlot={dropSlot}
