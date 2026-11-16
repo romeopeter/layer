@@ -9,13 +9,23 @@ import {
   MAX_SPOT_ZOOM,
   MIN_LENGTH,
   MIN_SPOT_ZOOM,
+  backgroundCanMove,
   cameraMoves,
   movesOnItsOwn,
 } from "@/lib/motion/normalise";
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ChoiceTile } from "./ChoiceTile";
-import { Field, LabeledSlider, Linebreak, PanelDesc, PanelHelp, SectionLabel, SwitchRow } from "./primitives";
+import {
+  Field,
+  LabeledSlider,
+  Linebreak,
+  PanelDesc,
+  PanelHelp,
+  PanelLink,
+  SectionLabel,
+  SwitchRow,
+} from "./primitives";
 
 const CAMERA_ICONS: Record<CameraMove, ReactNode> = {
   still: <Frame className="h-4 w-4" />,
@@ -80,6 +90,45 @@ const Zoom = () => {
           checked={depth}
           onCheckedChange={(value) => setMotion({ depth: value })}
         />
+      )}
+    </div>
+  );
+};
+
+/** What a live background does, by type, so the switch says what you'll get. */
+const LIVE_WHAT: Record<string, string> = {
+  abstract: "Its shapes flow and drift.",
+  pattern: "The pattern slides along.",
+  gradient: "The gradient sways.",
+  image: "The picture slowly grows and settles.",
+  solid: "Its grain flickers like film.",
+};
+
+/** The background moving on its own, round a loop that ends where it starts. */
+const LiveBackground = () => {
+  const live = useEditor((s) => s.motion.liveBackground);
+  const mode = useEditor((s) => s.background.mode);
+  const grain = useEditor((s) => s.background.effects.grain > 0);
+  const canMove = useEditor((s) => backgroundCanMove(s.background));
+  const setMotion = useEditor((s) => s.setMotion);
+  const setActiveTool = useEditor((s) => s.setActiveTool);
+
+  return (
+    <div className="flex flex-col gap-2">
+      <SectionLabel>BACKGROUND</SectionLabel>
+      {canMove ? (
+        <SwitchRow
+          label="LIVE BACKGROUND"
+          description={`${LIVE_WHAT[mode]}${grain && mode !== "solid" ? " Grain flickers like film." : ""}`}
+          checked={live}
+          onCheckedChange={(value) => setMotion({ liveBackground: value })}
+        />
+      ) : (
+        <PanelHelp className="my-0">
+          A plain color has nothing to move. Choose another
+          <PanelLink onClick={() => setActiveTool("background")}>background</PanelLink>
+          or add grain to it.
+        </PanelHelp>
       )}
     </div>
   );
@@ -241,6 +290,10 @@ export const AnimatePanel = () => {
       <Linebreak />
 
       <Objects />
+
+      <Linebreak />
+
+      <LiveBackground />
     </div>
   );
 };

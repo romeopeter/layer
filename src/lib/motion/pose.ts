@@ -36,8 +36,11 @@ export interface PoseOptions {
 
 /** Draws what Konva can't pose by moving a node: a 3D turn, typing, a line drawing itself. */
 export type ObjectPainter = (pose: ObjectPose | null, options: PoseOptions) => void;
-/** Draws the live background at a point in its cycle (0 to 1), or at rest when null. */
-export type BackgroundPainter = (phase: number | null, options: PoseOptions) => void;
+/**
+ * Draws the live background at a point in its cycle (0 to 1), or at rest when
+ * null. Drawing may take a moment (a pattern's tile); an export waits for it.
+ */
+export type BackgroundPainter = (phase: number | null, options: PoseOptions) => void | Promise<void>;
 
 const objectPainters = new Map<string, ObjectPainter>();
 let backgroundPainter: BackgroundPainter | null = null;
@@ -105,8 +108,11 @@ const placeAttrs = (el: LayerElement, pose: ObjectPose) => {
 /** Nodes posed since the last rest, so resting puts back only what moved. */
 const posed = new Set<string>();
 
-/** Puts the whole canvas in its pose at time `t`. */
-export const poseStage = (stage: Konva.Stage, scene: MotionScene, t: number, options: PoseOptions) => {
+/**
+ * Puts the whole canvas in its pose at time `t`. Resolves once everything is
+ * drawn, which an export waits for and a preview doesn't.
+ */
+export const poseStage = async (stage: Konva.Stage, scene: MotionScene, t: number, options: PoseOptions) => {
   const { canvas, motion } = scene;
   const view = cameraAt(motion, focusOf(scene), t);
   stage.findOne(`.${CAMERA_GROUP_NAME}`)?.setAttrs(viewTransform(view, canvas.width, canvas.height));
@@ -138,7 +144,7 @@ export const poseStage = (stage: Konva.Stage, scene: MotionScene, t: number, opt
   moving.forEach((id) => posed.add(id));
 
   const live = motion.liveBackground && backgroundCanMove(scene.background);
-  backgroundPainter?.(live ? (t / motion.length) % 1 : null, options);
+  await backgroundPainter?.(live ? (t / motion.length) % 1 : null, options);
 };
 
 /** Takes the pose off: everything back where the design has it. */
@@ -153,6 +159,6 @@ export const restStage = (stage: Konva.Stage, scene: MotionScene, options: PoseO
     objectPainters.get(id)?.(null, options);
   }
   posed.clear();
-  backgroundPainter?.(null, options);
+  void backgroundPainter?.(null, options);
   releaseTiltPictures();
 };

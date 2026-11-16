@@ -407,3 +407,100 @@ test.describe("Animate: zoom spots", () => {
     expect(same[0]).toBeCloseTo(same[1], 6);
   });
 });
+
+test.describe("Animate: live backgrounds", () => {
+  /** A drawn background at a moment of its loop, as a data URL to compare. */
+  const drawnAt = (page: Page, phase: number, frame = 0): Promise<string> =>
+    page.evaluate(`(async () => {
+      const node = ST().findOne(".background-fill");
+      const out = document.createElement("canvas");
+      await node.getAttr("drawAt")(0.25, out, { phase: ${phase}, frame: ${frame} });
+      return out.toDataURL();
+    })()`);
+
+  test("an abstract background flows round a loop that ends where it starts", async ({ page }) => {
+    await openApp(page, "Animate");
+    await loadMotion(page);
+    await page.evaluate(`S.getState().setBackground({ mode: "abstract" })`);
+    await page.waitForFunction(`!!ST().findOne(".background-fill")`);
+
+    const rest = (await page.evaluate(`(async () => {
+      const out = document.createElement("canvas");
+      await ST().findOne(".background-fill").getAttr("drawAt")(0.25, out);
+      return out.toDataURL();
+    })()`)) as string;
+    expect(await drawnAt(page, 0)).toBe(rest);
+    expect(await drawnAt(page, 1)).toBe(rest);
+    // Just before the end it's nearly the start again; halfway, it's moved on.
+    const difference = (phase: number) =>
+      page.evaluate(`(async () => {
+        const node = ST().findOne(".background-fill");
+        const read = async (live) => {
+          const out = document.createElement("canvas");
+          await node.getAttr("drawAt")(0.25, out, live);
+          return out.getContext("2d").getImageData(0, 0, out.width, out.height).data;
+        };
+        const a = await read(null);
+        const b = await read({ phase: ${phase}, frame: 0 });
+        let sum = 0;
+        for (let i = 0; i < a.length; i += 4) sum += Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]);
+        return sum / (a.length / 4) / 3;
+      })()`) as Promise<number>;
+    // A frame before the end differs from the start as little as a frame after it does.
+    const before = await difference(0.995);
+    const after = await difference(0.005);
+    const halfway = await difference(0.5);
+    expect(before).toBeLessThan(after * 1.5 + 0.5);
+    expect(halfway).toBeGreaterThan(before * 3);
+
+    await animatePanel(page).getByText("LIVE BACKGROUND").click();
+    expect(await page.evaluate(`S.getState().motion.liveBackground`)).toBe(true);
+    await expect(page.getByRole("button", { name: "Play animation" })).toBeVisible();
+    await page.evaluate(`PLAY.seek(3)`);
+    await page.waitForTimeout(100);
+    // The live picture is on the canvas, not the resting one.
+    const showing = await page.evaluate(`(() => {
+      const node = ST().findOne(".background-fill");
+      return node.image().width;
+    })()`);
+    expect(showing).toBeGreaterThan(0);
+    await page.keyboard.press("Escape");
+  });
+
+  test("grain flickers from frame to frame only while live", async ({ page }) => {
+    await openApp(page, "Animate");
+    await page.evaluate(`S.getState().setBackground({ mode: "solid" })`);
+    await expect(animatePanel(page).getByText("A plain color has nothing to move.")).toBeVisible();
+    await page.evaluate(`S.getState().setEffects({ grain: 0.6 })`);
+    await page.waitForFunction(`!!ST().findOne(".background-fill")`);
+    await expect(animatePanel(page).getByText("Its grain flickers like film.")).toBeVisible();
+    expect(await drawnAt(page, 0, 1)).not.toBe(await drawnAt(page, 0, 2));
+    expect(await drawnAt(page, 0, 0)).toBe(await drawnAt(page, 0, 0));
+  });
+
+  test("a plain gradient sways, and a pattern slides one tile per loop", async ({ page }) => {
+    await openApp(page, "Animate");
+    await loadMotion(page);
+    await page.evaluate(`S.getState().setBackground({ mode: "gradient" })`);
+    await page.evaluate(`S.getState().setMotion({ liveBackground: true })`);
+    const ends = (t: number) =>
+      page.evaluate(`(() => {
+        POSE.poseStage(ST(), S.getState(), ${t}, { scale: 1, frame: 0, preview: true });
+        return ST().findOne(".plain-gradient").fillLinearGradientStartPoint();
+      })()`);
+    const start = await ends(0);
+    expect(await ends(1.5)).not.toEqual(start);
+    expect(await ends(6)).toEqual(start);
+
+    await page.evaluate(`S.getState().setBackground({ mode: "pattern" })`);
+    await page.waitForFunction(`!!ST().findOne(".pattern-fill")`);
+    const offset = (await page.evaluate(`(() => {
+      POSE.poseStage(ST(), S.getState(), 3, { scale: 1, frame: 0, preview: true });
+      const fill = ST().findOne(".pattern-fill");
+      return { offset: fill.fillPatternOffset(), tile: fill.fillPatternImage().width };
+    })()`)) as { offset: { x: number }; tile: number };
+    expect(offset.offset.x).toBeCloseTo(offset.tile / 2, 5);
+    await page.evaluate(`POSE.restStage(ST(), S.getState(), { scale: 1, frame: 0, preview: true })`);
+    expect(await page.evaluate(`ST().findOne(".pattern-fill").fillPatternOffset().x`)).toBe(0);
+  });
+});

@@ -29,7 +29,8 @@ const sceneNow = (): MotionScene => {
 const draw = () => {
   const stage = getStage();
   if (!stage) return;
-  poseStage(stage, sceneNow(), time, { scale: 1, frame, preview: true });
+  // Anything drawn later (a live pattern's tile) redraws its own layer when it's ready.
+  void poseStage(stage, sceneNow(), time, { scale: 1, frame, preview: true });
   stage.batchDraw();
 };
 

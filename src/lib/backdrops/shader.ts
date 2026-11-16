@@ -282,6 +282,7 @@ uniform vec2 uSize;
 uniform float uFrost;
 uniform float uGrain;
 uniform float uVignette;
+uniform float uGrainSeed;
 ${COMMON}
 /** How far frosted glass scatters what's behind it, in canvas pixels, at full frost. */
 const float SCATTER = 14.0;
@@ -301,7 +302,7 @@ void main() {
   float edge = length((vUv - 0.5) * 2.0) / 1.41421356;
   col *= 1.0 - uVignette * 0.85 * smoothstep(0.3, 1.0, edge);
 
-  col += (hash(cell + vec2(7919.0, 0.0)) - 0.5) * uGrain * 0.24;
+  col += (hash(cell + vec2(7919.0 + uGrainSeed, uGrainSeed)) - 0.5) * uGrain * 0.24;
   // A hair of noise in every background, so smooth gradients don't band.
   col += (hash(gl_FragCoord.xy) - 0.5) / 255.0;
   outColor = vec4(clamp(col, 0.0, 1.0), 1.0);
