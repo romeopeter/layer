@@ -1,43 +1,37 @@
 import type { PatternColorPair } from "@/types/pattern";
+import type { BrandColor } from "@/types/brand";
 
-export interface BrandColor {
-  name: string;
-  hex: string;
-}
-
-/**
- * Brand kits are Phase 2 — there is no brand store to read from yet, and the
- * BRANDS panel is still a Pro stub. This is the single seam where brand colours
- * enter the pattern system: when the brand store lands, return its colours from
- * here and the "From your brand" row lights up with no other change.
- */
-export const getBrandColors = (): BrandColor[] => [];
+/** Enough to choose from without a row of near-twins. */
+const MAX_BRAND_PAIRS = 6;
 
 /**
- * Ordered pairs, so a colour can appear as either base or accent — swapping the
- * two reads as a genuinely different pattern, not a duplicate. Capped so the
- * picker doesn't drown in near-identical swatches.
+ * Pairs from the active brand kit's colours, for the pattern's "From your brand"
+ * row. Its first three colours, each way round: swapping base and accent reads as
+ * a different pattern, not a duplicate.
  *
- * Available on the free tier by design: it's the deliberate taste of brand
- * consistency. Only full brand-kit propagation stays Pro-gated.
+ * Ids come from the colours' own ids, so they don't change when the kit's order
+ * does. Choosing one writes its colours into the pattern (see `PatternPanel`),
+ * so a project never needs the kit to look right.
  */
-export const deriveBrandPatternPairs = (
-  colors: BrandColor[] = getBrandColors(),
-): PatternColorPair[] => {
-  if (colors.length < 2) return [];
-
+export const deriveBrandPatternPairs = (colors: BrandColor[]): PatternColorPair[] => {
+  const main = colors.slice(0, 3);
   const pairs: PatternColorPair[] = [];
-  for (let i = 0; i < colors.length; i++) {
-    for (let j = 0; j < colors.length; j++) {
-      if (i === j) continue;
-      pairs.push({
-        id: `brand-${i}-${j}`,
-        base: colors[i].hex,
-        accent: colors[j].hex,
-        source: "brand",
-        label: `${colors[i].name} / ${colors[j].name}`,
-      });
+  for (let gap = 1; gap < main.length; gap++) {
+    for (let i = 0; i + gap < main.length; i++) {
+      for (const [base, accent] of [
+        [main[i], main[i + gap]],
+        [main[i + gap], main[i]],
+      ]) {
+        if (base.hex === accent.hex) continue;
+        pairs.push({
+          id: `brand-${base.id}-${accent.id}`,
+          base: base.hex,
+          accent: accent.hex,
+          source: "brand",
+          label: `${base.name} / ${accent.name}`,
+        });
+      }
     }
   }
-  return pairs.slice(0, 3);
+  return pairs.slice(0, MAX_BRAND_PAIRS);
 };

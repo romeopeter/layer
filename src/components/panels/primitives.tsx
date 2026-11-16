@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils";
 import { Slider as ShSlider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { useEditor } from "@/store/editor";
+import { activeKit } from "@/lib/brand/kits";
 import { choiceClass } from "./choice";
 
 export const PanelTitle = ({
@@ -198,8 +199,7 @@ export const SwitchRow = ({
 );
 
 /** The active brand kit's colours, for every colour picker to offer. */
-const useBrandColors = () =>
-  useEditor((s) => s.brandKits.find((kit) => kit.id === s.activeBrandKitId)?.colors);
+const useBrandColors = () => useEditor((s) => activeKit(s)?.colors);
 
 export const ColorRow = ({
   value,

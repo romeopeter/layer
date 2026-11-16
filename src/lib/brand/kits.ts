@@ -29,6 +29,10 @@ const STARTER_COLORS = ["#534AB7", "#1D9E75"];
 
 export const isLayerFont = (family: string) => SYSTEM_FONTS.includes(family);
 
+/** The kit the editor offers everywhere, for store selectors. */
+export const activeKit = (state: { brandKits: BrandKit[]; activeBrandKitId: string | null }) =>
+  state.brandKits.find((kit) => kit.id === state.activeBrandKitId) ?? null;
+
 export const colorOf = (kit: BrandKit, id: string | null) =>
   (id && kit.colors.find((color) => color.id === id)?.hex) || null;
 

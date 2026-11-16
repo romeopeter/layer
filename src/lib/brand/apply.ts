@@ -1,4 +1,4 @@
-import type { BackgroundState, LayerElement, WatermarkSettings } from "@/types";
+import type { BackgroundState, LayerElement, TextElement, WatermarkSettings } from "@/types";
 import type { BrandKit } from "@/types/brand";
 import type { Palette } from "@/lib/backdrops/colors";
 import { lookWithColor } from "@/lib/backdrops/presets";
@@ -39,17 +39,21 @@ export const brandBackground = (kit: BrandKit, current: BackgroundState): Backgr
   }
 };
 
+/** How the brand sets a heading or body text. Its colour is left out when the kit keeps the text's own. */
+export const brandText = (kit: BrandKit, variant: TextElement["variant"]): Partial<TextElement> => {
+  const style = variant === "heading" ? kit.heading : kit.body;
+  const fill = colorOf(kit, style.colorId);
+  return {
+    fontFamily: style.family,
+    fontWeight: style.weight,
+    letterSpacing: style.letterSpacing,
+    ...(fill ? { fill } : {}),
+  };
+};
+
 /** An element in the brand: headings and body text in their styles, images with its corners and shadow. */
 export const inBrand = (kit: BrandKit, el: LayerElement): LayerElement => {
-  if (el.type === "text") {
-    const style = el.variant === "heading" ? kit.heading : kit.body;
-    return styleText(el, {
-      fontFamily: style.family,
-      fontWeight: style.weight,
-      letterSpacing: style.letterSpacing,
-      fill: colorOf(kit, style.colorId) ?? el.fill,
-    });
-  }
+  if (el.type === "text") return styleText(el, brandText(kit, el.variant));
   if (el.type === "image") {
     const shadow = kit.images.shadow ? BRAND_SHADOW : { ...(el.shadow ?? BRAND_SHADOW), enabled: false };
     return styleImage(el, kit.images.cornerShare, shadow);

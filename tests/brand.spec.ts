@@ -212,3 +212,55 @@ test("on the desktop, kits come back from their file and go to it", async ({ pag
   expect(stored.kits.map((k) => k.name)).toEqual(["Saved again"]);
   expect(errors).toEqual([]);
 });
+
+test("the font picker lists the brand's fonts first, and new text is set in the brand", async ({ page }) => {
+  const errors = await openApp(page, "Text");
+  await setKit(page);
+  await page.getByRole("button", { name: "Add a heading" }).click();
+  const heading: { fontFamily: string; fontWeight: number; fill: string } = await page.evaluate(`S.getState().elements[0]`);
+  expect(heading).toMatchObject({ fontFamily: "JetBrains Mono", fontWeight: 500, fill: "#FAFAFA" });
+  await expect(panel(page).getByText("New text is set in Acme's fonts and colors.")).toBeVisible();
+
+  await properties(page).getByRole("combobox", { name: "Font" }).click();
+  const options = await page.getByRole("option").allTextContents();
+  expect(options.slice(0, 2)).toEqual(["JetBrains Mono", "DM Sans"]);
+  // Layer's own follow, without repeating the brand's.
+  expect(options.filter((name) => name === "DM Sans")).toHaveLength(1);
+  await page.keyboard.press("Escape");
+
+  // The text tool sets its text in the brand's body style.
+  await page.evaluate(`S.getState().setMarkTool({ kind: "text" })`);
+  const canvas = await page.locator(".canvas-artboard canvas").first().boundingBox();
+  if (!canvas) throw new Error("Canvas isn't on screen");
+  await page.mouse.click(canvas.x + 40, canvas.y + canvas.height - 40);
+  const typed: { fontFamily: string; fill: string } = await page.evaluate(`S.getState().elements.at(-1)`);
+  expect(typed).toMatchObject({ fontFamily: "DM Sans", fill: "#FFAA00" });
+  expect(errors).toEqual([]);
+});
+
+test("pattern colours come from the brand, and stay when the kit goes", async ({ page }) => {
+  const errors = await openApp(page, "Background");
+  await setKit(page);
+  await page.getByRole("radio", { name: "Pattern", exact: true }).click();
+  const pair = page.getByRole("button", { name: "Ink / Sun" });
+  await pair.click();
+  expect(await page.evaluate(`S.getState().background.pattern.colors`)).toEqual({ base: "#112233", accent: "#FFAA00" });
+  await expect(pair).toHaveAttribute("aria-pressed", "true");
+  // Three colours, each way round.
+  await expect(page.getByRole("button", { name: /^(Ink|Sun|Snow) \/ (Ink|Sun|Snow)$/ })).toHaveCount(6);
+
+  await page.evaluate(`S.getState().deleteBrandKit(S.getState().activeBrandKitId)`);
+  await expect(pair).toHaveCount(0);
+  expect(await page.evaluate(`S.getState().background.pattern.colors`)).toEqual({ base: "#112233", accent: "#FFAA00" });
+  expect(errors).toEqual([]);
+});
+
+test("Canvas Properties shows the active kit, and opens it", async ({ page }) => {
+  await openApp(page);
+  await openSection(page, "Brand");
+  await expect(properties(page).getByText("No brand kit")).toBeVisible();
+  await setKit(page);
+  await expect(properties(page).getByText("Acme")).toBeVisible();
+  await properties(page).getByRole("button", { name: "Open brand kit" }).click();
+  expect(await page.evaluate(`S.getState().activeTool`)).toBe("brands");
+});

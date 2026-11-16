@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { fileToDataURL } from "@/lib/importers";
 import { layerName } from "@/lib/layerNames";
 import { layoutOf } from "@/lib/layouts";
+import { activeKit } from "@/lib/brand/kits";
 import { DEVICES } from "@/lib/mockups";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -228,6 +229,7 @@ const CanvasProperties = () => {
   const layout = useEditor((s) => s.layout);
   const layerCount = useEditor((s) => s.elements.length);
   const watermark = useEditor((s) => s.watermark);
+  const kit = useEditor(activeKit);
   const setActiveTool = useEditor((s) => s.setActiveTool);
   const [sizeOpen, setSizeOpen] = useState(false);
 
@@ -282,6 +284,13 @@ const CanvasProperties = () => {
           value={(watermark.badge.show ? "Layer badge" : "No badge") + own}
           action="Edit"
           onClick={() => setActiveTool("watermark")}
+        />
+      </PropertySection>
+      <PropertySection id="canvas.brand" title="Brand">
+        <Jump
+          value={kit ? kit.name : "No brand kit"}
+          action={kit ? "Open brand kit" : "Make a brand kit"}
+          onClick={() => setActiveTool("brands")}
         />
       </PropertySection>
     </>
