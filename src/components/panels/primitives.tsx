@@ -167,6 +167,14 @@ export const LabeledSlider = ({
   </div>
 );
 
+/** A name over a set of choices, as a slider has over its track. */
+export const Field = ({ label, children }: { label: string; children: ReactNode }) => (
+  <div className="flex flex-col gap-1.5">
+    <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-p-200">{label}</span>
+    {children}
+  </div>
+);
+
 export const SwitchRow = ({
   label,
   description,

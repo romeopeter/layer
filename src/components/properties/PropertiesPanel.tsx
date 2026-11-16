@@ -21,13 +21,14 @@ import { hasMotion, movesOnItsOwn } from "@/lib/motion/normalise";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { CanvasSizePicker } from "@/components/CanvasSizePicker";
-import { LabeledSlider, PanelHelp } from "@/components/panels/primitives";
+import { LabeledSlider, PanelHelp, PanelLink } from "@/components/panels/primitives";
 import { CornerControls } from "@/components/panels/CornerControls";
 import { ShadowControls } from "@/components/panels/ShadowControls";
 import { PositionControls } from "@/components/panels/PositionControls";
 import { TiltControls } from "@/components/panels/TiltControls";
 import { ImageEditSection } from "@/components/panels/ImageEditSection";
 import { StyleControls } from "@/components/panels/mark/StyleControls";
+import { ElementMotionControls } from "@/components/panels/ElementMotionControls";
 import { SpacingControls, TextColorControls, TypographyControls } from "@/components/panels/TextControls";
 
 /* ------------------------------------------------------------------------------------------- */
@@ -100,8 +101,6 @@ const OpacityControl = ({ el }: { el: LayerElement }) => {
   );
 };
 
-const MotionNote = () => <PanelHelp>Animation arrives in Phase 2. Animate on the left shows what's planned.</PanelHelp>;
-
 /* ------------------------------------------------------------------------------------------- */
 
 /** Swaps the picture, keeping the image's place, width and settings. */
@@ -172,8 +171,8 @@ const ImageProperties = ({ image }: { image: ImageElement }) => {
       <PropertySection id="image.position" title="Position & size">
         <PositionControls el={image} />
       </PropertySection>
-      <PropertySection id="image.motion" title="Motion">
-        <MotionNote />
+      <PropertySection id="image.motion" title="Animate">
+        <ElementMotionControls el={image} />
       </PropertySection>
     </>
   );
@@ -198,8 +197,8 @@ const TextProperties = ({ text }: { text: TextElement }) => (
     <PropertySection id="text.position" title="Position & size">
       <PositionControls el={text} />
     </PropertySection>
-    <PropertySection id="text.motion" title="Motion">
-      <MotionNote />
+    <PropertySection id="text.motion" title="Animate">
+      <ElementMotionControls el={text} />
     </PropertySection>
   </>
 );
@@ -218,8 +217,8 @@ const ShapeProperties = ({ shape }: { shape: ShapeElement }) => {
           <PositionControls el={shape} />
         </PropertySection>
       )}
-      <PropertySection id="shape.motion" title="Motion">
-        <MotionNote />
+      <PropertySection id="shape.motion" title="Animate">
+        <ElementMotionControls el={shape} />
       </PropertySection>
     </>
   );
@@ -332,6 +331,10 @@ export const PropertiesPanel = () => {
         <Heading icon={<Layers className="h-3.5 w-3.5" />} kind={`${selectedIds.length} layers`} />
         <div className="px-4 py-3">
           <PanelHelp>Drag to move them together. Select one on its own to change its settings.</PanelHelp>
+          <PanelHelp>
+            To bring them in one after another, use
+            <PanelLink onClick={() => useEditor.getState().setActiveTool("motion")}>Animate</PanelLink>
+          </PanelHelp>
         </div>
       </>
     );

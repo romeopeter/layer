@@ -1,6 +1,7 @@
 import { useEditor } from "@/store/editor";
 import { getStage } from "@/components/canvas/stageRef";
 import { poseStage, restStage, type MotionScene } from "./pose";
+import { releaseTiltPictures } from "@/lib/tiltRender";
 
 /**
  * Playing the animation on the canvas. The time lives here, outside the store:
@@ -114,6 +115,8 @@ useEditor.subscribe((state, previous) => {
     emit();
     return;
   }
+  // A picture kept on the GPU for the preview may have just been edited.
+  if (state.previewing && state.elements !== previous.elements) releaseTiltPictures();
   // Paused on a moment, a change to the design shows at that moment. Playing,
   // the next frame shows it anyway.
   if (

@@ -1,12 +1,13 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Frame, MoveRight, MoveUp, ZoomIn, ZoomOut } from "lucide-react";
 import { useEditor } from "@/store/editor";
-import type { CameraMove, MotionFeel, MotionStrength } from "@/types/motion";
+import type { CameraMove, EnterMove, MotionFeel, MotionStrength } from "@/types/motion";
 import { CAMERA_MOVES, FEELS, STRENGTHS } from "@/lib/motion/moves";
-import { MAX_LENGTH, MIN_LENGTH, cameraMoves } from "@/lib/motion/normalise";
+import { MAX_LENGTH, MIN_LENGTH, cameraMoves, movesOnItsOwn } from "@/lib/motion/normalise";
+import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ChoiceTile } from "./ChoiceTile";
-import { LabeledSlider, Linebreak, PanelDesc, PanelHelp, SectionLabel, SwitchRow } from "./primitives";
+import { Field, LabeledSlider, Linebreak, PanelDesc, PanelHelp, SectionLabel, SwitchRow } from "./primitives";
 
 const CAMERA_ICONS: Record<CameraMove, ReactNode> = {
   still: <Frame className="h-4 w-4" />,
@@ -16,13 +17,62 @@ const CAMERA_ICONS: Record<CameraMove, ReactNode> = {
   rise: <MoveUp className="h-4 w-4" />,
 };
 
-/** A name over a set of choices, as a slider has. */
-const Field = ({ label, children }: { label: string; children: ReactNode }) => (
-  <div className="flex flex-col gap-1.5">
-    <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-p-200">{label}</span>
-    {children}
-  </div>
-);
+/** Ways in that suit a whole design brought in piece by piece. */
+const ONE_BY_ONE: { id: EnterMove; label: string }[] = [
+  { id: "fade", label: "Fade" },
+  { id: "rise", label: "Rise" },
+  { id: "pop", label: "Pop" },
+];
+
+/**
+ * Many objects at once: the same way in for each, one after another. Like a look,
+ * it sets each object's own moves, which stay theirs to change.
+ */
+const Objects = () => {
+  const moving = useEditor((s) => s.elements.filter(movesOnItsOwn).length);
+  const selected = useEditor((s) => s.selectedIds.length);
+  const bringIn = useEditor((s) => s.bringInOneByOne);
+  const clear = useEditor((s) => s.clearElementMotion);
+  const [enter, setEnter] = useState<EnterMove>("rise");
+
+  const bringInNow = () => {
+    const { elements, selectedIds } = useEditor.getState();
+    bringIn(selectedIds.length > 1 ? selectedIds : elements.map((el) => el.id), enter);
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      <SectionLabel>OBJECTS</SectionLabel>
+      <PanelHelp className="my-0">
+        {moving === 0 ? "Nothing moves on its own yet." : moving === 1 ? "1 object moves on its own." : `${moving} objects move on their own.`}{" "}
+        Select an object to set its own moves in Properties.
+      </PanelHelp>
+      <Field label="BRING IN ONE BY ONE">
+        <ToggleGroup
+          type="single"
+          aria-label="Way in"
+          value={enter}
+          onValueChange={(value) => value && setEnter(value as EnterMove)}
+          className="w-full"
+        >
+          {ONE_BY_ONE.map((entry) => (
+            <ToggleGroupItem key={entry.id} value={entry.id} className="cursor-pointer">
+              {entry.label}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+      </Field>
+      <Button variant="ghost" size="block" className="cursor-pointer" onClick={bringInNow}>
+        {selected > 1 ? `Bring in the ${selected} selected, one by one` : "Bring in everything, one by one"}
+      </Button>
+      {moving > 0 && (
+        <Button variant="ghost" size="block" className="cursor-pointer" onClick={clear}>
+          Clear object moves
+        </Button>
+      )}
+    </div>
+  );
+};
 
 /**
  * Animate › Animate: how the whole design moves. Each object's own moves are in
@@ -115,6 +165,10 @@ export const AnimatePanel = () => {
           </>
         )}
       </div>
+
+      <Linebreak />
+
+      <Objects />
     </div>
   );
 };

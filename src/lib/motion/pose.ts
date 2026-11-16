@@ -4,6 +4,7 @@ import type { DesignMotion } from "@/types/motion";
 import { backgroundViewOf, cameraAt, viewTransform, WIDE } from "./camera";
 import { objectPoseAt, type ObjectPose } from "./objects";
 import { backgroundCanMove } from "./normalise";
+import { releaseTiltPictures } from "@/lib/tiltRender";
 
 /**
  * Puts the canvas in its pose at a moment of the animation, straight onto the
@@ -153,4 +154,5 @@ export const restStage = (stage: Konva.Stage, scene: MotionScene, options: PoseO
   }
   posed.clear();
   backgroundPainter?.(null, options);
+  releaseTiltPictures();
 };

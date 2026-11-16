@@ -30,7 +30,7 @@ test("Properties follows the selection: canvas, image, text, element, and back",
 
   const image = await addTwoToneImage(page);
   expect(await showing(page)).toBe("Image");
-  for (const title of ["Edit", "Appearance", "Shadow", "3D", "Mockup", "Position & size", "Motion"]) {
+  for (const title of ["Edit", "Appearance", "Shadow", "3D", "Mockup", "Position & size", "Animate"]) {
     await expect(section(page, title)).toBeVisible();
   }
   await expect(section(page, "Typography")).toHaveCount(0);

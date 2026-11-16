@@ -127,3 +127,185 @@ test.describe("Animate: the camera", () => {
     expect(await page.evaluate(`S.getState().motion.camera`)).toBe("still");
   });
 });
+
+const pose = (page: Page, t: number) =>
+  page.evaluate(`(() => {
+    const s = S.getState();
+    POSE.poseStage(ST(), s, ${t}, { scale: 1, frame: 0, preview: true });
+    ST().batchDraw();
+  })()`);
+
+const nodeAttrs = (page: Page, id: string): Promise<{ x: number; y: number; opacity: number; rotation: number }> =>
+  page.evaluate(`(() => {
+    const node = ST().findOne("#${id}");
+    return { x: node.x(), y: node.y(), opacity: node.opacity(), rotation: node.rotation() };
+  })()`);
+
+test.describe("Animate: objects", () => {
+  test("an object comes in when it starts, and with a loop, leaves the way it came", async ({ page }) => {
+    await openApp(page);
+    await loadMotion(page);
+    const id = await addTwoToneImage(page);
+    await page.evaluate(`S.getState().setElementMotion("${id}", { enter: "rise", start: 1, takes: 0.8 })`);
+
+    await pose(page, 0.5);
+    expect((await nodeAttrs(page, id)).opacity).toBe(0);
+    await pose(page, 1.4);
+    const rising = await nodeAttrs(page, id);
+    expect(rising.opacity).toBeGreaterThan(0);
+    expect(rising.y).toBeGreaterThan(200);
+    await pose(page, 2.5);
+    expect(await nodeAttrs(page, id)).toEqual({ x: 200, y: 200, opacity: 1, rotation: 0 });
+    // Gone again by the length less its start: 6 − 1.
+    await pose(page, 5.5);
+    expect((await nodeAttrs(page, id)).opacity).toBe(0);
+
+    await page.evaluate(`POSE.restStage(ST(), S.getState(), { scale: 1, frame: 0, preview: true })`);
+    expect(await nodeAttrs(page, id)).toEqual({ x: 200, y: 200, opacity: 1, rotation: 0 });
+  });
+
+  test("text types itself out, and lines draw themselves", async ({ page }) => {
+    await openApp(page);
+    await loadMotion(page);
+    const text = (await page.evaluate(`(() => {
+      const s = S.getState();
+      const id = s.addText("heading", { text: "Ship it today" });
+      s.setElementMotion(id, { enter: "type", start: 0, takes: 2 });
+      return id;
+    })()`)) as string;
+    const arrow = (await page.evaluate(`(() => {
+      const s = S.getState();
+      const id = s.addShape("arrow", {
+        x: 300, y: 300, width: 500, height: 200,
+        connector: { start: [0, 0], end: [500, 200], route: "straight", headStart: "none", headEnd: "arrow" },
+      });
+      s.setElementMotion(id, { enter: "draw", start: 0, takes: 2 });
+      return id;
+    })()`)) as string;
+    await page.waitForTimeout(200);
+
+    await pose(page, 1);
+    const typed = (await page.evaluate(`ST().findOne("#${text}").findOne("Text").text()`)) as string;
+    expect(typed.length).toBeGreaterThan(0);
+    expect(typed.length).toBeLessThan("Ship it today".length);
+    expect("Ship it today".startsWith(typed)).toBe(true);
+
+    const drawing = (await page.evaluate(`(() => {
+      const group = ST().findOne("#${arrow}");
+      const stroke = group.findOne(".draw-stroke");
+      return { dash: stroke.dash(), offset: stroke.dashOffset(), head: group.findOne(".draw-head").visible() };
+    })()`)) as { dash: number[]; offset: number; head: boolean };
+    expect(drawing.dash.length).toBe(2);
+    expect(drawing.offset).toBeGreaterThan(0);
+    expect(drawing.head).toBe(false);
+
+    await page.evaluate(`POSE.restStage(ST(), S.getState(), { scale: 1, frame: 0, preview: true })`);
+    expect(await page.evaluate(`ST().findOne("#${text}").findOne("Text").text()`)).toBe("Ship it today");
+    expect(await page.evaluate(`ST().findOne("#${arrow}").findOne(".draw-head").visible()`)).toBe(true);
+    expect(await page.evaluate(`ST().findOne("#${arrow}").findOne(".draw-stroke").dashOffset()`)).toBe(0);
+  });
+
+  test("a picture turns in 3D, and in a mockup it moves in 2D instead", async ({ page }) => {
+    await openApp(page);
+    await loadMotion(page);
+    const id = await addTwoToneImage(page);
+    await page.evaluate(`S.getState().setElementMotion("${id}", { keep: "swing" })`);
+
+    await pose(page, 1);
+    const turned = (await page.evaluate(`(() => {
+      const posed = ST().findOne("#${id}").findOne(".posed-picture");
+      return { visible: posed.visible(), width: posed.width() };
+    })()`)) as { visible: boolean; width: number };
+    expect(turned.visible).toBe(true);
+    expect(turned.width).toBeGreaterThan(0);
+
+    await page.evaluate(`POSE.restStage(ST(), S.getState(), { scale: 1, frame: 0, preview: true })`);
+    expect(await page.evaluate(`ST().findOne("#${id}").findOne(".posed-picture").visible()`)).toBe(false);
+
+    await page.evaluate(`S.getState().setDeviceFrame("${id}", ${JSON.stringify({
+      device: "iphone-14-pro",
+      finish: "default",
+      landscape: false,
+      fit: "fill",
+      zoom: 1,
+      panX: 0,
+      panY: 0,
+      barColor: "#000000",
+      thickness: 1,
+      roundness: 1,
+      address: "example.com",
+    })})`);
+    await page.waitForFunction(`!!ST().findOne("#${id}").findOne(".mockup-frame")`);
+    await pose(page, 1);
+    // Swing becomes a sway: the whole device rocks, flat.
+    expect(Math.abs((await nodeAttrs(page, id)).rotation)).toBeGreaterThan(0.1);
+    expect(await page.evaluate(`!!ST().findOne("#${id}").findOne(".posed-picture")`)).toBe(false);
+  });
+
+  test("each object is offered only the moves it can make", async ({ page }) => {
+    await openApp(page);
+    const id = await addTwoToneImage(page);
+    await openSection(page, "Animate");
+    const properties = page.getByRole("complementary", { name: "Properties" });
+    await properties.getByRole("combobox", { name: "Comes in" }).click();
+    await expect(page.getByRole("option", { name: "Turn in" })).toBeVisible();
+    await expect(page.getByRole("option", { name: "Type" })).toHaveCount(0);
+    await expect(page.getByRole("option", { name: "Draw" })).toHaveCount(0);
+    await page.getByRole("option", { name: "Pop" }).click();
+    expect(await page.evaluate(`S.getState().elements[0].motion.enter`)).toBe("pop");
+    await expect(properties.getByText("STARTS AT")).toBeVisible();
+
+    await properties.getByRole("combobox", { name: "Keeps moving" }).click();
+    await expect(page.getByRole("option", { name: "Swing" })).toBeVisible();
+    await expect(page.getByRole("option", { name: "Spin" })).toHaveCount(0);
+    await page.keyboard.press("Escape");
+
+    await page.evaluate(`(() => {
+      const s = S.getState();
+      s.selectElement(s.addText("body", { text: "Hello" }));
+    })()`);
+    await openSection(page, "Animate");
+    await properties.getByRole("combobox", { name: "Comes in" }).click();
+    await expect(page.getByRole("option", { name: "Type" })).toBeVisible();
+    await expect(page.getByRole("option", { name: "Turn in" })).toHaveCount(0);
+    await page.keyboard.press("Escape");
+
+    await page.evaluate(`(() => {
+      const s = S.getState();
+      s.selectElement(s.addShape("emoji", { text: "🚀" }));
+    })()`);
+    await openSection(page, "Animate");
+    await properties.getByRole("combobox", { name: "Keeps moving" }).click();
+    await expect(page.getByRole("option", { name: "Spin" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    expect(id).toBeTruthy();
+  });
+
+  test("bringing everything in one by one staggers the starts in one undo step", async ({ page }) => {
+    await openApp(page, "Animate");
+    await addTwoToneImage(page);
+    await page.evaluate(`(() => {
+      const s = S.getState();
+      s.addText("heading", { text: "One" });
+      s.addText("body", { text: "Two" });
+      s.selectElement(null);
+    })()`);
+    await page.waitForTimeout(500);
+    const panel = animatePanel(page);
+    await panel.getByRole("radio", { name: "Pop" }).click();
+    await panel.getByRole("button", { name: "Bring in everything, one by one" }).click();
+    const starts = await page.evaluate(`S.getState().elements.map((el) => [el.motion.enter, el.motion.start])`);
+    expect(starts).toEqual([
+      ["pop", 0],
+      ["pop", 0.2],
+      ["pop", 0.4],
+    ]);
+    await expect(panel.getByText("3 objects move on their own.")).toBeVisible();
+
+    await page.keyboard.press("Meta+z");
+    expect(await page.evaluate(`S.getState().elements.every((el) => !el.motion)`)).toBe(true);
+    await page.keyboard.press("Meta+Shift+z");
+    await panel.getByRole("button", { name: "Clear object moves" }).click();
+    expect(await page.evaluate(`S.getState().elements.every((el) => !el.motion)`)).toBe(true);
+  });
+});
