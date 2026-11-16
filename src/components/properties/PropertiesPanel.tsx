@@ -18,7 +18,7 @@ import { DEVICES } from "@/lib/mockups";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { CanvasSizePicker } from "@/components/CanvasSizePicker";
-import { LabeledSlider, PanelHelp, SwitchRow } from "@/components/panels/primitives";
+import { LabeledSlider, PanelHelp } from "@/components/panels/primitives";
 import { CornerControls } from "@/components/panels/CornerControls";
 import { ShadowControls } from "@/components/panels/ShadowControls";
 import { PositionControls } from "@/components/panels/PositionControls";
@@ -228,10 +228,6 @@ const CanvasProperties = () => {
   const layout = useEditor((s) => s.layout);
   const layerCount = useEditor((s) => s.elements.length);
   const watermark = useEditor((s) => s.watermark);
-  const grid = useEditor((s) => s.grid);
-  const toggleGrid = useEditor((s) => s.toggleGrid);
-  const snapEnabled = useEditor((s) => s.snapEnabled);
-  const toggleSnap = useEditor((s) => s.toggleSnap);
   const setActiveTool = useEditor((s) => s.setActiveTool);
   const [sizeOpen, setSizeOpen] = useState(false);
 
@@ -279,15 +275,6 @@ const CanvasProperties = () => {
           value={layerCount === 1 ? "1 layer" : `${layerCount} layers`}
           action="Show layers"
           onClick={() => setActiveTool("layers")}
-        />
-      </PropertySection>
-      <PropertySection id="canvas.guides" title="Grid & guides">
-        <SwitchRow label="GRID" checked={grid.enabled} onCheckedChange={() => toggleGrid()} />
-        <SwitchRow
-          label="SNAP TO GUIDES"
-          description="Things line up with the canvas and each other as you drag."
-          checked={snapEnabled}
-          onCheckedChange={() => toggleSnap()}
         />
       </PropertySection>
       <PropertySection id="canvas.watermark" title="Watermark">
