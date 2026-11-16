@@ -11,6 +11,7 @@ import { MARK_DRAFT_LAYER_NAME } from "../components/canvas/MarkDraft";
 import { MARK_HANDLES_LAYER_NAME } from "../components/canvas/MarkHandles";
 import { CROP_LAYER_NAME } from "../components/canvas/CropOverlay";
 import { LAYOUT_SLOTS_LAYER_NAME } from "../components/canvas/LayoutOverlay";
+import { ZOOM_SPOTS_LAYER_NAME } from "../components/canvas/ZoomSpotsLayer";
 
 const dataURLtoBlob = (dataUrl: string): Blob => {
   const [meta, b64] = dataUrl.split(",");
@@ -42,6 +43,7 @@ const withOverlaysHidden = async <T,>(
     ...stage.find(`.${MARK_HANDLES_LAYER_NAME}`),
     ...stage.find(`.${CROP_LAYER_NAME}`),
     ...stage.find(`.${LAYOUT_SLOTS_LAYER_NAME}`),
+    ...stage.find(`.${ZOOM_SPOTS_LAYER_NAME}`),
   ];
   const visible = overlays.map((node) => node.visible());
   overlays.forEach((node) => node.visible(false));

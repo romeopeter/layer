@@ -37,6 +37,7 @@ import { MIN_FRAME_SIZE } from "@/lib/constants";
 import { FIXED_RATIO_SHAPES } from "@/lib/marks";
 import { BACKGROUND_CAMERA_NAME, CAMERA_GROUP_NAME } from "@/lib/motion/pose";
 import { playback } from "@/lib/motion/playback";
+import { ZOOM_SPOTS_LAYER_NAME, ZoomSpotsLayer } from "./ZoomSpotsLayer";
 
 /* ------------------------------------------------------------------------ */
 
@@ -114,6 +115,9 @@ export const CanvasStage = () => {
   const markTool = useEditor((s) => s.markTool);
   // Showing a moment of the animation: view-only until it's stopped.
   const previewing = useEditor((s) => s.previewing);
+  // Zoom spots show while Animate is open, where they're set.
+  const spots = useEditor((s) => s.motion.spots);
+  const animateOpen = useEditor((s) => s.activeTool === "motion" && s.leftPanelOpen);
   const editingId = useEditor((s) => s.editingId);
   const cropId = useEditor((s) => s.cropId);
   const setCropId = useEditor((s) => s.setCropId);
@@ -271,6 +275,7 @@ export const CanvasStage = () => {
     }
     if (isTransformerTarget(target)) return;
     if (target.getLayer()?.name() === MARK_HANDLES_LAYER_NAME) return;
+    if (target.getLayer()?.name() === ZOOM_SPOTS_LAYER_NAME) return;
     // Crop mode ends with Apply or Cancel, not a stray click.
     if (cropId || target.getLayer()?.name() === CROP_LAYER_NAME) return;
 
@@ -656,6 +661,10 @@ export const CanvasStage = () => {
               scale={scale}
               onAdd={addToLayout}
             />
+          )}
+
+          {animateOpen && !previewing && !markTool && !cropElement && spots.length > 0 && (
+            <ZoomSpotsLayer spots={spots} canvas={canvas} scale={scale} />
           )}
 
           {cropElement && (

@@ -309,3 +309,101 @@ test.describe("Animate: objects", () => {
     expect(await page.evaluate(`S.getState().elements.every((el) => !el.motion)`)).toBe(true);
   });
 });
+
+test.describe("Animate: zoom spots", () => {
+  test("the camera zooms into each spot, which stays inside the canvas and out of exports", async ({ page }) => {
+    await openApp(page, "Animate");
+    await loadMotion(page);
+    const id = await addTwoToneImage(page);
+    const panel = animatePanel(page);
+    await panel.getByRole("button", { name: "Zoom to the selection" }).click();
+    const spot = (await page.evaluate(`S.getState().motion.spots[0]`)) as { cx: number; cy: number; zoom: number };
+    // Framing the 800×400 picture at 200,200 on a 2400×1350 canvas.
+    expect(spot.cx).toBeCloseTo(600 / 2400, 5);
+    expect(spot.cy).toBeCloseTo(400 / 1350, 5);
+    expect(spot.zoom).toBeGreaterThan(1.25);
+    await expect(page.getByRole("button", { name: "Play animation" })).toBeVisible();
+    expect(await page.evaluate(`ST().find(".zoom-spot").length`)).toBe(1);
+
+    // One spot over 6 s with a loop: in for 1.5 s, held for 3 s, out for 1.5 s.
+    const held = (await page.evaluate(`CAM.cameraAt(S.getState().motion, { x: 0.5, y: 0.5 }, 3)`)) as {
+      cx: number;
+      cy: number;
+      zoom: number;
+    };
+    expect(held.zoom).toBeCloseTo(spot.zoom, 6);
+    // The window can't go past the canvas's edge: its middle is pulled in.
+    const half = 0.5 / held.zoom;
+    expect(held.cx).toBeGreaterThanOrEqual(half - 1e-9);
+    expect(held.cy).toBeGreaterThanOrEqual(half - 1e-9);
+
+    await page.evaluate(`PLAY.seek(3)`);
+    expect((await cameraAttrs(page)).scaleX).toBeCloseTo(spot.zoom, 5);
+    // While previewing, the spots are out of the way.
+    expect(await page.evaluate(`ST().find(".zoom-spot").length`)).toBe(0);
+    await page.keyboard.press("Escape");
+
+    const exported = (await page.evaluate(`(async () => {
+      const stage = ST();
+      const layer = stage.findOne(".zoom-spots");
+      const capture = stage.toDataURL.bind(stage);
+      let during = null;
+      stage.toDataURL = (options) => {
+        during = layer.visible();
+        return capture(options);
+      };
+      await X.renderCanvasDataURL("png", 1);
+      stage.toDataURL = capture;
+      return { during, after: layer.visible() };
+    })()`)) as { during: boolean; after: boolean };
+    expect(exported).toEqual({ during: false, after: true });
+
+    // Delete takes it away; undo brings it back.
+    await panel.getByRole("button", { name: "Delete spot 1" }).click();
+    expect(await page.evaluate(`S.getState().motion.spots.length`)).toBe(0);
+    await page.keyboard.press("Meta+z");
+    expect(await page.evaluate(`S.getState().motion.spots.length`)).toBe(1);
+    expect(id).toBeTruthy();
+  });
+
+  test("a spot is moved by dragging its edge on the canvas", async ({ page }) => {
+    await openApp(page, "Animate");
+    await page.evaluate(`S.getState().selectElement(null)`);
+    await animatePanel(page).getByRole("button", { name: "Add a zoom spot" }).click();
+    const before = (await page.evaluate(`S.getState().motion.spots[0]`)) as { cx: number; cy: number };
+    expect(before).toMatchObject({ cx: 0.5, cy: 0.5 });
+
+    const edge = (await page.evaluate(`(() => {
+      const stage = ST();
+      const box = stage.findOne(".zoom-spot").getClientRect();
+      const at = stage.container().getBoundingClientRect();
+      return { x: at.left + box.x + box.width / 2, y: at.top + box.y + 1 };
+    })()`)) as { x: number; y: number };
+    await page.mouse.move(edge.x, edge.y);
+    await page.mouse.down();
+    await page.mouse.move(edge.x - 60, edge.y + 30, { steps: 6 });
+    await page.mouse.up();
+    const after = (await page.evaluate(`S.getState().motion.spots[0]`)) as { cx: number; cy: number };
+    expect(after.cx).toBeLessThan(0.5);
+    expect(after.cy).toBeGreaterThan(0.5);
+    // A drag is one step.
+    await page.keyboard.press("Meta+z");
+    expect(await page.evaluate(`S.getState().motion.spots[0].cx`)).toBe(0.5);
+  });
+
+  test("with depth, the background moves less than the design", async ({ page }) => {
+    await openApp(page, "Animate");
+    await loadMotion(page);
+    await page.evaluate(`S.getState().setMotion({ camera: "push-in", strength: "strong" })`);
+    await page.evaluate(`PLAY.seek(3)`);
+    const scales = (await page.evaluate(`[ST().findOne(".motion-camera").scaleX(), ST().findOne(".motion-background").scaleX()]`)) as number[];
+    expect(scales[0]).toBeGreaterThan(scales[1]);
+    expect(scales[1]).toBeGreaterThan(1);
+
+    await animatePanel(page).getByText("DEPTH").click();
+    expect(await page.evaluate(`S.getState().motion.depth`)).toBe(false);
+    await page.evaluate(`PLAY.seek(3)`);
+    const same = (await page.evaluate(`[ST().findOne(".motion-camera").scaleX(), ST().findOne(".motion-background").scaleX()]`)) as number[];
+    expect(same[0]).toBeCloseTo(same[1], 6);
+  });
+});

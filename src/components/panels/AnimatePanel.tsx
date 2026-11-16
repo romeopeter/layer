@@ -1,9 +1,17 @@
 import { useState, type ReactNode } from "react";
-import { Frame, MoveRight, MoveUp, ZoomIn, ZoomOut } from "lucide-react";
+import { Frame, MoveRight, MoveUp, Plus, Trash2, ZoomIn, ZoomOut } from "lucide-react";
 import { useEditor } from "@/store/editor";
 import type { CameraMove, EnterMove, MotionFeel, MotionStrength } from "@/types/motion";
 import { CAMERA_MOVES, FEELS, STRENGTHS } from "@/lib/motion/moves";
-import { MAX_LENGTH, MIN_LENGTH, cameraMoves, movesOnItsOwn } from "@/lib/motion/normalise";
+import {
+  MAX_LENGTH,
+  MAX_SPOTS,
+  MAX_SPOT_ZOOM,
+  MIN_LENGTH,
+  MIN_SPOT_ZOOM,
+  cameraMoves,
+  movesOnItsOwn,
+} from "@/lib/motion/normalise";
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ChoiceTile } from "./ChoiceTile";
@@ -15,6 +23,66 @@ const CAMERA_ICONS: Record<CameraMove, ReactNode> = {
   "pull-back": <ZoomOut className="h-4 w-4" />,
   drift: <MoveRight className="h-4 w-4" />,
   rise: <MoveUp className="h-4 w-4" />,
+};
+
+/** Places the camera zooms into, in turn. They're drawn on the canvas while this tab is open. */
+const Zoom = () => {
+  const spots = useEditor((s) => s.motion.spots);
+  const depth = useEditor((s) => s.motion.depth);
+  const filmed = useEditor((s) => cameraMoves(s.motion));
+  const selected = useEditor((s) => s.selectedIds.length === 1);
+  const setMotion = useEditor((s) => s.setMotion);
+  const add = useEditor((s) => s.addZoomSpot);
+  const update = useEditor((s) => s.updateZoomSpot);
+  const remove = useEditor((s) => s.removeZoomSpot);
+
+  return (
+    <div className="flex flex-col gap-3">
+      <SectionLabel>ZOOM</SectionLabel>
+      <PanelHelp className="my-0">
+        {spots.length === 0
+          ? "Zoom into a spot to show off a detail. Select something first to zoom right to it."
+          : "The camera zooms into each spot in turn. Drag a spot's edge on the canvas to move it, or its corners to zoom."}
+      </PanelHelp>
+      {spots.map((spot, index) => (
+        <div key={spot.id} className="flex items-end gap-2">
+          <LabeledSlider
+            className="flex-1"
+            label={`SPOT ${index + 1}`}
+            unit="×"
+            min={MIN_SPOT_ZOOM}
+            max={MAX_SPOT_ZOOM}
+            step={0.05}
+            value={Math.round(spot.zoom * 100) / 100}
+            onChange={(zoom) => update(spot.id, { zoom })}
+          />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="shrink-0 cursor-pointer"
+            aria-label={`Delete spot ${index + 1}`}
+            title="Delete"
+            onClick={() => remove(spot.id)}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      ))}
+      {spots.length < MAX_SPOTS && (
+        <Button variant="ghost" size="block" className="cursor-pointer" onClick={() => add()}>
+          <Plus className="h-3 w-3" /> {selected ? "Zoom to the selection" : "Add a zoom spot"}
+        </Button>
+      )}
+      {filmed && (
+        <SwitchRow
+          label="DEPTH"
+          description="The background moves less than the design, as if it were further away."
+          checked={depth}
+          onCheckedChange={(value) => setMotion({ depth: value })}
+        />
+      )}
+    </div>
+  );
 };
 
 /** Ways in that suit a whole design brought in piece by piece. */
@@ -165,6 +233,10 @@ export const AnimatePanel = () => {
           </>
         )}
       </div>
+
+      <Linebreak />
+
+      <Zoom />
 
       <Linebreak />
 
