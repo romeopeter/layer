@@ -68,6 +68,8 @@ export const renderCanvasDataURL = (
   if (!stage) return Promise.resolve(null);
 
   return withOverlaysHidden(stage, options, async () => {
+    // Text in a font still loading would export in a stand-in.
+    await document.fonts.ready;
     // The stage is scaled to fit, and the pixelRatio below compensates for that,
     // so the background pattern is rasterized at `pixelRatio` device pixels per
     // canvas unit regardless of the current zoom.

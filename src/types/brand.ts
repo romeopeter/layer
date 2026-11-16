@@ -27,6 +27,11 @@ export interface FontFile {
   src: string;
 }
 
+/** One weight of a font a project carries, so it opens the same anywhere. */
+export interface ProjectFont extends FontFile {
+  family: string;
+}
+
 /** A font added to a kit. Layer's own fonts need no entry here. */
 export interface BrandFont {
   family: string;

@@ -39,6 +39,9 @@ import { storeBrandKits, storeSavedBackgrounds } from "../lib/host";
 import { DEFAULT_WATERMARK, marginOf, normaliseWatermark } from "../lib/watermark";
 import { brandId, kitFromDesign, nextKitName } from "../lib/brand/kits";
 import { brandPatch } from "../lib/brand/apply";
+import { isLayerFont } from "../lib/brand/kits";
+import { normaliseProjectFonts } from "../lib/brand/normalise";
+import { fontFilesFor, registerFonts, setFontLoadedListener } from "../lib/fonts/registry";
 import { inLook, lookBackground, type DesignLook } from "../lib/looks";
 import { migrateElement, nextNumber } from "../lib/marks";
 import { placeFrame } from "../lib/mockups";
@@ -159,6 +162,8 @@ interface EditorState {
   brandKits: BrandKit[];
   /** The kit the rest of the editor offers: its colours in pickers, its fonts first. */
   activeBrandKitId: string | null;
+  /** Transient: goes up when a font finishes loading, so text set in it is measured again. */
+  fontsVersion: number;
   /** Transient: what a canvas drag creates. Null means it selects and moves. */
   markTool: MarkTool | null;
   /** Style for the next mark, by category. Lasts the session, not the project. */
@@ -285,6 +290,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   savedBackgrounds: [],
   brandKits: [],
   activeBrandKitId: null,
+  fontsVersion: 0,
   markTool: null,
   markStyles: DEFAULT_MARK_STYLES,
   editingId: null,
@@ -843,6 +849,8 @@ export const useEditor = create<EditorState>((set, get) => ({
   },
 
   loadProject: (project) => {
+    // The fonts it carries load in the background; text is measured again as each arrives.
+    void registerFonts(normaliseProjectFonts(project.fonts));
     set({
       markTool: null,
       editingId: null,
@@ -867,14 +875,23 @@ export const useEditor = create<EditorState>((set, get) => ({
     history.reset();
   },
 
-  toProject: () => ({
-    version: 1,
-    canvas: { width: get().canvas.width, height: get().canvas.height },
-    background: get().background,
-    elements: get().elements,
-    watermark: get().watermark,
-    layout: get().layout,
-  }),
+  toProject: () => {
+    const { canvas, background, elements, watermark, layout } = get();
+    // Fonts that aren't Layer's own go with the project, so it opens the same anywhere.
+    const families = new Set(
+      elements.flatMap((el) => (el.type === "text" && !isLayerFont(el.fontFamily) ? [el.fontFamily] : [])),
+    );
+    const fonts = [...families].flatMap(fontFilesFor);
+    return {
+      version: 1,
+      canvas: { width: canvas.width, height: canvas.height },
+      background,
+      elements,
+      watermark,
+      layout,
+      ...(fonts.length > 0 ? { fonts } : {}),
+    };
+  },
 
   resetProject: () => {
     set({
@@ -964,5 +981,17 @@ useEditor.subscribe((state, previous) => {
     history.changed();
   }
 });
+
+// A kit's fonts are on the page whenever the kit is, so its text can use them.
+useEditor.subscribe((state, previous) => {
+  if (state.brandKits === previous.brandKits) return;
+  void registerFonts(
+    state.brandKits.flatMap((kit) =>
+      kit.fonts.flatMap((font) => font.files.map((file) => ({ family: font.family, ...file }))),
+    ),
+  );
+});
+
+setFontLoadedListener(() => useEditor.setState((state) => ({ fontsVersion: state.fontsVersion + 1 })));
 
 export type { Tool };

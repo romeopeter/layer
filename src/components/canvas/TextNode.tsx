@@ -20,6 +20,7 @@ const TextNodeBody = ({ el, onSelect }: Props) => {
   const setEditingId = useEditor((s) => s.setEditingId);
   const editing = useEditor((s) => s.editingId === el.id);
   const textRef = useRef<Konva.Text>(null);
+  const fontsVersion = useEditor((s) => s.fontsVersion);
   const sp = el.shadow?.enabled
     ? {
         shadowColor: el.shadow.color,
@@ -29,6 +30,14 @@ const TextNodeBody = ({ el, onSelect }: Props) => {
         shadowOpacity: 1,
       }
     : {};
+
+  // A font that arrived after the text was laid out changes where its lines break.
+  useEffect(() => {
+    const node = textRef.current;
+    if (!node || fontsVersion === 0) return;
+    node._setTextData();
+    node.getLayer()?.batchDraw();
+  }, [fontsVersion]);
 
   // The box is as tall as its wrapped lines, so keep the stored height honest.
   useEffect(() => {

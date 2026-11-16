@@ -290,6 +290,7 @@ export interface CanvasSize {
 }
 
 export * from "./pattern";
+import type { ProjectFont } from "./brand";
 
 export type LayoutId =
   | "side"
@@ -374,4 +375,6 @@ export interface LayerProject {
   watermark: WatermarkSettings | boolean;
   /** Absent in projects saved before layouts existed. */
   layout?: CanvasLayout | null;
+  /** Fonts its text uses that aren't Layer's own. Absent when there are none. */
+  fonts?: ProjectFont[];
 }

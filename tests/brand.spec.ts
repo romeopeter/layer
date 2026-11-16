@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import { addTwoToneImage, fakeShell, openApp, openSection, shellCalls, solidPng } from "./helpers";
 
@@ -263,4 +264,62 @@ test("Canvas Properties shows the active kit, and opens it", async ({ page }) =>
   await expect(properties(page).getByText("Acme")).toBeVisible();
   await properties(page).getByRole("button", { name: "Open brand kit" }).click();
   expect(await page.evaluate(`S.getState().activeTool`)).toBe("brands");
+});
+
+/** Whether a font face of this family and weight has loaded on the page. */
+const hasFont = (page: Page, family: string, weight: number) =>
+  page.evaluate(`[...document.fonts].some((f) => f.family.replace(/"/g, "") === ${JSON.stringify(family)} && f.weight === "${weight}" && f.status === "loaded")`);
+
+/** A real font file, under whatever name the test gives it. */
+const fontFile = (name: string) => ({
+  name,
+  mimeType: "font/woff2",
+  buffer: readFileSync(new URL("../node_modules/@fontsource/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff2", import.meta.url)),
+});
+
+test("a font is uploaded, named from its file, used, and carried in the project", async ({ page }) => {
+  const errors = await openApp(page, "Brand kit");
+  await setKit(page);
+  await page.getByLabel("Upload a font file to the brand kit").setInputFiles(fontFile("AcmeGrotesk-SemiBold.woff2"));
+  await expect(page.getByRole("textbox", { name: "Font name" })).toHaveValue("Acme Grotesk");
+  await expect(page.getByRole("group", { name: "Font file's weight" }).getByRole("radio", { name: "Bold" })).toHaveAttribute("aria-checked", "true");
+  await page.getByRole("button", { name: "Add font" }).click();
+  await expect(panel(page).getByText("Bold · Uploaded")).toBeVisible();
+  await expect.poll(() => hasFont(page, "Acme Grotesk", 700)).toBe(true);
+
+  // Set headings in it, and apply.
+  await page.getByRole("combobox", { name: "heading font" }).click();
+  await page.getByRole("option", { name: "Acme Grotesk" }).click();
+  await page.getByRole("radio", { name: "Bold" }).first().click();
+  await page.evaluate(`S.getState().addText("heading")`);
+  await page.getByRole("button", { name: "Apply brand" }).click();
+  expect(await page.evaluate(`S.getState().elements[0].fontFamily`)).toBe("Acme Grotesk");
+
+  const project = await page.evaluate<{ fonts?: { family: string; weight: number; src: string }[] }>(`S.getState().toProject()`);
+  expect(project.fonts?.map((font) => [font.family, font.weight])).toEqual([["Acme Grotesk", 700]]);
+  expect(project.fonts?.[0].src.startsWith("data:font/woff2;base64,")).toBe(true);
+
+  // Opened somewhere without the kit, the project brings the font with it.
+  const fresh = await page.context().newPage();
+  await openApp(fresh);
+  expect(await hasFont(fresh, "Acme Grotesk", 700)).toBe(false);
+  await fresh.evaluate(`S.getState().loadProject(${JSON.stringify(project)})`);
+  await expect.poll(() => hasFont(fresh, "Acme Grotesk", 700)).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test("a file that isn't a font is refused, and a font named like Layer's must be renamed", async ({ page }) => {
+  await openApp(page, "Brand kit");
+  await setKit(page);
+  await page.getByLabel("Upload a font file to the brand kit").setInputFiles({ ...solidPng(), name: "fake.ttf" });
+  await expect(panel(page).getByText("That file isn't a font Layer can use, or it's damaged.")).toBeVisible();
+
+  await page.getByLabel("Upload a font file to the brand kit").setInputFiles(fontFile("Inter-Regular.woff2"));
+  await expect(page.getByRole("textbox", { name: "Font name" })).toHaveValue("Inter");
+  await expect(page.getByRole("button", { name: "Add font" })).toBeDisabled();
+  await page.getByRole("textbox", { name: "Font name" }).fill("Inter Brand");
+  await page.getByRole("button", { name: "Add font" }).click();
+  expect((await activeKit(page)).heading.family).toBe("JetBrains Mono");
+  await page.getByRole("button", { name: "Delete Inter Brand" }).click();
+  await expect(panel(page).getByText("0 OF 12")).toBeVisible();
 });

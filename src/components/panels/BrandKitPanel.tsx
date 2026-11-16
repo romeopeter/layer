@@ -1,14 +1,27 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, ArrowRight, Copy, Plus, Stamp, Star, Trash2, Upload, X } from "lucide-react";
 import { useEditor } from "@/store/editor";
-import type { BrandColor, BrandKit, BrandLogo, BrandTextStyle, FontWeight } from "@/types/brand";
+import type { BrandColor, BrandFont, BrandKit, BrandLogo, BrandTextStyle, FontWeight } from "@/types/brand";
 import { cn } from "@/lib/utils";
 import { SYSTEM_FONTS } from "@/lib/constants";
 import { fileToDataURL } from "@/lib/importers";
 import { hasBrandKitsFile } from "@/lib/host";
 import { backgroundThumb } from "@/lib/background/thumb";
 import { brandBackground } from "@/lib/brand/apply";
-import { MAX_BRAND_COLORS, MAX_BRAND_LOGOS, brandId, colorName, colorOf } from "@/lib/brand/kits";
+import {
+  DEFAULT_BODY,
+  DEFAULT_HEADING,
+  MAX_BRAND_COLORS,
+  MAX_BRAND_FONTS,
+  MAX_BRAND_LOGOS,
+  brandId,
+  colorName,
+  colorOf,
+  isLayerFont,
+} from "@/lib/brand/kits";
+import { isFamilyName } from "@/lib/brand/normalise";
+import { isUsableFont } from "@/lib/fonts/registry";
+import { familyFromFileName, fontMime, weightFromFileName } from "@/lib/fonts/files";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -399,6 +412,159 @@ const Colors = ({ kit }: { kit: BrandKit }) => {
 
 /* ------------------------------------------------------------------------------------------- */
 
+const WEIGHT_NAMES: Record<FontWeight, string> = { 400: "Regular", 500: "Medium", 700: "Bold" };
+
+/** A kit with one weight of a font added, or replaced if it had that weight already. */
+const withFontFile = (kit: BrandKit, font: BrandFont): BrandFont[] => {
+  const existing = kit.fonts.find((entry) => entry.family === font.family);
+  if (!existing) return [...kit.fonts, font];
+  const weights = new Set(font.files.map((file) => file.weight));
+  return kit.fonts.map((entry) =>
+    entry === existing
+      ? { ...entry, files: [...entry.files.filter((file) => !weights.has(file.weight)), ...font.files] }
+      : entry,
+  );
+};
+
+const WeightToggle = ({ value, onChange, label }: { value: FontWeight; onChange: (weight: FontWeight) => void; label: string }) => (
+  <ToggleGroup
+    type="single"
+    aria-label={label}
+    value={String(value)}
+    onValueChange={(v) => v && onChange(Number(v) as FontWeight)}
+    className="w-full"
+  >
+    {([400, 500, 700] as const).map((weight) => (
+      <ToggleGroupItem key={weight} value={String(weight)} className="cursor-pointer">
+        {WEIGHT_NAMES[weight]}
+      </ToggleGroupItem>
+    ))}
+  </ToggleGroup>
+);
+
+/** Fonts are kept whole in the kit's file. */
+const MAX_FONT_BYTES = 10 * 1024 * 1024;
+
+interface PendingFont {
+  src: string;
+  family: string;
+  weight: FontWeight;
+}
+
+/** Choose a font file, check it's one, then name it and say which weight it is. */
+const FontUpload = ({ kit }: { kit: BrandKit }) => {
+  const set = useKit(kit);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [pending, setPending] = useState<PendingFont | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const mime = fontMime(file.name);
+    if (!mime) return setProblem("Choose a .woff2, .woff, .ttf or .otf file.");
+    if (file.size > MAX_FONT_BYTES) return setProblem("A font file can be up to 10 MB.");
+    const src = await fileToDataURL(new Blob([file], { type: mime }));
+    if (!(await isUsableFont(src))) return setProblem("That file isn't a font Layer can use, or it's damaged.");
+    setProblem(null);
+    setPending({ src, family: familyFromFileName(file.name), weight: weightFromFileName(file.name) });
+  };
+
+  const name = pending?.family.trim() ?? "";
+  const nameProblem = !pending
+    ? null
+    : !isFamilyName(name)
+      ? "Use letters, numbers, spaces and hyphens."
+      : isLayerFont(name)
+        ? "Layer already has a font by that name."
+        : null;
+
+  const add = () => {
+    if (!pending || nameProblem) return;
+    set({ fonts: withFontFile(kit, { family: name, source: "upload", files: [{ weight: pending.weight, src: pending.src }] }) });
+    setPending(null);
+  };
+
+  return (
+    <div className="space-y-2">
+      {pending ? (
+        <div className="space-y-2 rounded-md border border-hairline bg-chrome/40 p-2">
+          <Input
+            aria-label="Font name"
+            maxLength={64}
+            value={pending.family}
+            onChange={(e) => setPending({ ...pending, family: e.target.value })}
+          />
+          <WeightToggle label="Font file's weight" value={pending.weight} onChange={(weight) => setPending({ ...pending, weight })} />
+          {nameProblem && <PanelHelp className="text-a-200">{nameProblem}</PanelHelp>}
+          <div className="flex justify-end gap-1.5">
+            <Button variant="ghost" size="sm" className="cursor-pointer" onClick={() => setPending(null)}>
+              Cancel
+            </Button>
+            <Button variant="primary" size="sm" className="cursor-pointer" disabled={!!nameProblem} onClick={add}>
+              Add font
+            </Button>
+          </div>
+        </div>
+      ) : (
+        kit.fonts.length < MAX_BRAND_FONTS && (
+          <Button variant="outline" size="block" className="cursor-pointer" onClick={() => fileRef.current?.click()}>
+            <Upload className="h-3 w-3" /> Upload a font
+          </Button>
+        )
+      )}
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".woff2,.woff,.ttf,.otf"
+        className="hidden"
+        onChange={(e) => void onFile(e)}
+        aria-label="Upload a font file to the brand kit"
+      />
+      {problem && <PanelHelp className="text-a-200">{problem}</PanelHelp>}
+    </div>
+  );
+};
+
+const Fonts = ({ kit }: { kit: BrandKit }) => {
+  const set = useKit(kit);
+  const remove = (family: string) =>
+    set({
+      fonts: kit.fonts.filter((font) => font.family !== family),
+      // Text styles set in it go back to Layer's own.
+      heading: kit.heading.family === family ? { ...kit.heading, family: DEFAULT_HEADING.family } : kit.heading,
+      body: kit.body.family === family ? { ...kit.body, family: DEFAULT_BODY.family } : kit.body,
+    });
+
+  return (
+    <div className="space-y-2">
+      <SectionLabel right={<MutedMini>{`${kit.fonts.length} OF ${MAX_BRAND_FONTS}`}</MutedMini>}>FONTS</SectionLabel>
+      {kit.fonts.map((font) => (
+        <div key={font.family} className="flex items-center gap-2 rounded-md border border-hairline bg-chrome/40 px-2.5 py-1.5">
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[13px] text-text" style={{ fontFamily: font.family }}>
+              {font.family}
+            </div>
+            <div className="truncate text-[10px] text-text-muted">
+              {[...font.files]
+                .sort((a, b) => a.weight - b.weight)
+                .map((file) => WEIGHT_NAMES[file.weight])
+                .join(", ")}
+              {font.source === "google" ? " · Google Fonts" : " · Uploaded"}
+            </div>
+          </div>
+          <Button variant="icon" size="iconSm" className="cursor-pointer" aria-label={`Delete ${font.family}`} title="Delete" onClick={() => remove(font.family)}>
+            <X className="h-3 w-3" />
+          </Button>
+        </div>
+      ))}
+      <FontUpload kit={kit} />
+      <PanelHelp>Only upload fonts you're licensed to use. They're saved in projects that use them.</PanelHelp>
+    </div>
+  );
+};
+
 const KEEP = "keep";
 
 const TextStyleRow = ({ kit, title, which }: { kit: BrandKit; title: string; which: "heading" | "body" }) => {
@@ -423,17 +589,7 @@ const TextStyleRow = ({ kit, title, which }: { kit: BrandKit; title: string; whi
           ))}
         </SelectContent>
       </Select>
-      <ToggleGroup
-        type="single"
-        aria-label={`${title.toLowerCase()} weight`}
-        value={String(style.weight)}
-        onValueChange={(v) => v && change({ weight: Number(v) as FontWeight })}
-        className="w-full"
-      >
-        <ToggleGroupItem value="400" className="cursor-pointer">Regular</ToggleGroupItem>
-        <ToggleGroupItem value="500" className="cursor-pointer">Medium</ToggleGroupItem>
-        <ToggleGroupItem value="700" className="cursor-pointer">Bold</ToggleGroupItem>
-      </ToggleGroup>
+      <WeightToggle label={`${title.toLowerCase()} weight`} value={style.weight} onChange={(weight) => change({ weight })} />
       <Select value={style.colorId ?? KEEP} onValueChange={(v) => change({ colorId: v === KEEP ? null : v })}>
         <SelectTrigger aria-label={`${title.toLowerCase()} color`}>
           <SelectValue />
@@ -490,6 +646,7 @@ const BrandKitView = ({ kit }: { kit: BrandKit }) => {
         <Colors kit={kit} />
       </Section>
       <Section>
+        <Fonts kit={kit} />
         <TextStyleRow kit={kit} title="HEADING" which="heading" />
         <TextStyleRow kit={kit} title="BODY" which="body" />
       </Section>

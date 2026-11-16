@@ -1,4 +1,5 @@
 import type {
+  ProjectFont,
   BrandColor,
   BrandFont,
   BrandKit,
@@ -98,6 +99,14 @@ const styleOf = (value: unknown, fallback: BrandTextStyle, families: Set<string>
     letterSpacing: number(entry.letterSpacing, -10, 20, fallback.letterSpacing),
   };
 };
+
+/** The fonts a project carries, keeping only whole ones. */
+export const normaliseProjectFonts = (value: unknown): ProjectFont[] =>
+  entriesOf(value).flatMap((entry) =>
+    isFamilyName(entry.family) && !isLayerFont(entry.family) && isFontWeight(entry.weight) && isFontSrc(entry.src)
+      ? [{ family: entry.family, weight: entry.weight, src: entry.src }]
+      : [],
+  );
 
 /** A kit made safe to show and apply, whatever the file says. Null if it's past saving. */
 export const normaliseBrandKit = (value: unknown): BrandKit | null => {
