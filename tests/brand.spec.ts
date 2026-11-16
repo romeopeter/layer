@@ -45,7 +45,7 @@ test("a new kit starts from the design, and Apply brand dresses it in one undo s
   // The default gradient's two colours come with it.
   const started = await activeKit(page);
   expect(started.colors.map((c) => c.hex)).toEqual(["#1C1F3B", "#534AB7"]);
-  await expect(page.getByRole("textbox", { name: "Brand name" })).toHaveValue("My brand");
+  await expect(page.getByRole("combobox", { name: "Brand kit" })).toHaveText("My brand");
 
   const image = await addTwoToneImage(page);
   await page.evaluate(`S.getState().addText("heading")`);
@@ -176,14 +176,25 @@ test("kits are switched, duplicated and deleted, with a check first", async ({ p
   await openApp(page, "Brand kit");
   await setKit(page);
   await page.getByRole("button", { name: "Duplicate this kit" }).click();
-  await expect(page.getByRole("textbox", { name: "Brand name" })).toHaveValue("Acme copy");
-  await page.getByRole("combobox", { name: "Brand kit" }).click();
+  const switcher = page.getByRole("combobox", { name: "Brand kit" });
+  await expect(switcher).toHaveText("Acme copy");
+  await switcher.click();
   await page.getByRole("option", { name: "Acme", exact: true }).click();
-  await expect(page.getByRole("textbox", { name: "Brand name" })).toHaveValue("Acme");
+  await expect(switcher).toHaveText("Acme");
+
+  // Renamed in place; an empty name doesn't stick.
+  await page.getByRole("button", { name: "Rename this kit" }).click();
+  await page.getByRole("textbox", { name: "Brand name" }).fill("");
+  await page.keyboard.press("Enter");
+  await expect(switcher).toHaveText("Brand");
+  await page.getByRole("button", { name: "Rename this kit" }).click();
+  await page.getByRole("textbox", { name: "Brand name" }).fill("Acme");
+  await page.keyboard.press("Enter");
+  await expect(switcher).toHaveText("Acme");
 
   await page.getByRole("button", { name: "Delete this kit" }).click();
   await page.getByRole("button", { name: "Delete kit" }).click();
-  await expect(page.getByRole("textbox", { name: "Brand name" })).toHaveValue("Acme copy");
+  await expect(switcher).toHaveText("Acme copy");
   await page.getByRole("button", { name: "Delete this kit" }).click();
   await page.getByRole("button", { name: "Delete kit" }).click();
   await expect(page.getByRole("button", { name: "Create a brand kit" })).toBeVisible();
@@ -200,12 +211,13 @@ test("on the desktop, kits come back from their file and go to it", async ({ pag
   });
   await fakeShell(page, `(command) => command === "load_brand_kits" ? ${JSON.stringify(file)} : null`);
   const errors = await openApp(page, "Brand kit");
-  await expect(page.getByRole("textbox", { name: "Brand name" })).toHaveValue("Saved");
+  await expect(page.getByRole("combobox", { name: "Brand kit" })).toHaveText("Saved");
   const kit = await activeKit(page);
   expect(kit.colors).toHaveLength(1);
   // A font that isn't there falls back to one of Layer's.
   expect(kit.heading.family).toBe("Bricolage Grotesque");
 
+  await page.getByRole("button", { name: "Rename this kit" }).click();
   await page.getByRole("textbox", { name: "Brand name" }).fill("Saved again");
   await expect.poll(async () => (await shellCalls(page, "store_brand_kits")).length).toBe(1);
   const stored = JSON.parse((await shellCalls(page, "store_brand_kits"))[0].kits as string) as { activeId: string; kits: Kit[] };

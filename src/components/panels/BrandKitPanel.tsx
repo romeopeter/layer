@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowLeft, ArrowRight, Copy, Plus, Search, Stamp, Star, Trash2, Upload, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Copy, Pencil, Plus, Search, Stamp, Star, Trash2, Upload, X } from "lucide-react";
 import { useEditor } from "@/store/editor";
 import type { BrandColor, BrandKit, BrandLogo, BrandTextStyle, FontWeight } from "@/types/brand";
 import { cn } from "@/lib/utils";
@@ -72,10 +72,26 @@ const KitBar = ({ kit }: { kit: BrandKit }) => {
   const remove = useEditor((s) => s.deleteBrandKit);
   const set = useKit(kit);
   const [confirming, setConfirming] = useState(false);
+  // The name is edited where it's shown, rather than in a second box beside it.
+  const [renaming, setRenaming] = useState(false);
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-1">
+    <div className="flex items-center gap-1">
+      {renaming ? (
+        <Input
+          aria-label="Brand name"
+          autoFocus
+          maxLength={60}
+          className="h-9 min-w-0 flex-1"
+          value={kit.name}
+          onChange={(e) => set({ name: e.target.value })}
+          onKeyDown={(e) => (e.key === "Enter" || e.key === "Escape") && e.currentTarget.blur()}
+          onBlur={(e) => {
+            if (!e.target.value.trim()) set({ name: "Brand" });
+            setRenaming(false);
+          }}
+        />
+      ) : (
         <Select value={kit.id} onValueChange={setActive}>
           <SelectTrigger aria-label="Brand kit" className="min-w-0 flex-1">
             <SelectValue />
@@ -88,46 +104,42 @@ const KitBar = ({ kit }: { kit: BrandKit }) => {
             ))}
           </SelectContent>
         </Select>
-        <Button variant="icon" size="icon" className="cursor-pointer" aria-label="New brand kit" title="New brand kit, from this design" onClick={() => create()}>
-          <Plus className="h-3.5 w-3.5" />
-        </Button>
-        <Button variant="icon" size="icon" className="cursor-pointer" aria-label="Duplicate this kit" title="Duplicate this kit" onClick={() => duplicate(kit.id)}>
-          <Copy className="h-3.5 w-3.5" />
-        </Button>
-        <Popover open={confirming} onOpenChange={setConfirming}>
-          <PopoverTrigger asChild>
-            <Button variant="icon" size="icon" className="cursor-pointer" aria-label="Delete this kit" title="Delete this kit">
-              <Trash2 className="h-3.5 w-3.5" />
+      )}
+      <Button variant="icon" size="icon" className="cursor-pointer" aria-label="Rename this kit" title="Rename" onClick={() => setRenaming(true)}>
+        <Pencil className="h-3.5 w-3.5" />
+      </Button>
+      <Button variant="icon" size="icon" className="cursor-pointer" aria-label="New brand kit" title="New brand kit, from this design" onClick={() => create()}>
+        <Plus className="h-3.5 w-3.5" />
+      </Button>
+      <Button variant="icon" size="icon" className="cursor-pointer" aria-label="Duplicate this kit" title="Duplicate this kit" onClick={() => duplicate(kit.id)}>
+        <Copy className="h-3.5 w-3.5" />
+      </Button>
+      <Popover open={confirming} onOpenChange={setConfirming}>
+        <PopoverTrigger asChild>
+          <Button variant="icon" size="icon" className="cursor-pointer" aria-label="Delete this kit" title="Delete this kit">
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="end" className="w-60 space-y-2.5 p-3">
+          <PanelDesc>Delete {kit.name}? Its logos, colors and fonts go too. Designs keep what you applied.</PanelDesc>
+          <div className="flex justify-end gap-1.5">
+            <Button variant="ghost" size="sm" className="cursor-pointer" onClick={() => setConfirming(false)}>
+              Keep it
             </Button>
-          </PopoverTrigger>
-          <PopoverContent align="end" className="w-60 space-y-2.5 p-3">
-            <PanelDesc>Delete {kit.name}? Its logos, colors and fonts go too. Designs keep what you applied.</PanelDesc>
-            <div className="flex justify-end gap-1.5">
-              <Button variant="ghost" size="sm" className="cursor-pointer" onClick={() => setConfirming(false)}>
-                Keep it
-              </Button>
-              <Button
-                variant="destructive"
-                size="sm"
-                className="cursor-pointer"
-                onClick={() => {
-                  setConfirming(false);
-                  remove(kit.id);
-                }}
-              >
-                Delete kit
-              </Button>
-            </div>
-          </PopoverContent>
-        </Popover>
-      </div>
-      <Input
-        aria-label="Brand name"
-        maxLength={60}
-        value={kit.name}
-        onChange={(e) => set({ name: e.target.value })}
-        onBlur={(e) => !e.target.value.trim() && set({ name: "Brand" })}
-      />
+            <Button
+              variant="destructive"
+              size="sm"
+              className="cursor-pointer"
+              onClick={() => {
+                setConfirming(false);
+                remove(kit.id);
+              }}
+            >
+              Delete kit
+            </Button>
+          </div>
+        </PopoverContent>
+      </Popover>
     </div>
   );
 };
