@@ -23,6 +23,16 @@ test.describe("Animate: the camera", () => {
     await animatePanel(page).getByRole("group", { name: "Camera moves" }).getByRole("button", { name: "Push in" }).click();
     expect(await page.evaluate(`S.getState().motion.camera`)).toBe("push-in");
     await expect(animatePanel(page).getByText("Moves slowly closer to the main picture.")).toBeVisible();
+    await expect(
+      animatePanel(page).getByText("Moves everything together. To move one object, select it and use its Animate section."),
+    ).toBeVisible();
+    // One word for one thing: no camera move shares a name with an object's move.
+    const clashes = await page.evaluate(`(async () => {
+      const m = await import("/src/lib/motion/moves.ts");
+      const objects = new Set([...m.ENTER_MOVES, ...m.KEEP_MOVES].map((move) => move.label));
+      return m.CAMERA_MOVES.filter((move) => objects.has(move.label)).map((move) => move.label);
+    })()`);
+    expect(clashes).toEqual([]);
 
     await page.keyboard.press("Meta+z");
     expect(await page.evaluate(`S.getState().motion.camera`)).toBe("still");
@@ -79,7 +89,7 @@ test.describe("Animate: the camera", () => {
     await openApp(page, "Animate");
     await loadMotion(page);
     await addTwoToneImage(page);
-    await animatePanel(page).getByRole("button", { name: "Drift" }).click();
+    await animatePanel(page).getByRole("button", { name: "Pan right" }).click();
 
     await page.getByRole("button", { name: "Play animation" }).click();
     await page.waitForTimeout(400);
@@ -587,7 +597,7 @@ test.describe("Animate: the Export menu", () => {
     await page.getByRole("button", { name: "Animate", exact: true }).last().click();
     await expect(animatePanel(page).getByRole("group", { name: "Camera moves" })).toBeVisible();
 
-    await animatePanel(page).getByRole("button", { name: "Drift" }).click();
+    await animatePanel(page).getByRole("button", { name: "Pan right" }).click();
     await openExport(page);
     await expect(page.getByRole("button", { name: "Download GIF" })).toBeEnabled();
     await expect(page.getByRole("button", { name: "Download MP4" })).toBeEnabled();

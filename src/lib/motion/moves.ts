@@ -17,8 +17,9 @@ export const CAMERA_MOVES: MoveInfo<CameraMove>[] = [
   { id: "still", label: "Still", description: "The camera stays put. Objects, zoom spots and the background can still move." },
   { id: "push-in", label: "Push in", description: "Moves slowly closer to the main picture." },
   { id: "pull-back", label: "Pull back", description: "Starts close on the main picture and opens out to the whole design." },
-  { id: "drift", label: "Drift", description: "Glides slowly from left to right." },
-  { id: "rise", label: "Rise", description: "Glides slowly upward." },
+  // Ids are saved in files; the names are camera words, so they're never mistaken for an object's moves.
+  { id: "drift", label: "Pan right", description: "Glides slowly from left to right." },
+  { id: "rise", label: "Pan up", description: "Glides slowly upward." },
 ];
 
 /** What an object is, as far as moves go. */

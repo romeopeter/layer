@@ -211,6 +211,9 @@ export const AnimatePanel = () => {
 
       <div className="space-y-2">
         <SectionLabel>CAMERA</SectionLabel>
+        <PanelHelp className="my-0">
+          Moves everything together. To move one object, select it and use its Animate section.
+        </PanelHelp>
         <div role="group" aria-label="Camera moves" className="grid grid-cols-3 gap-1.5">
           {CAMERA_MOVES.map((move) => (
             <ChoiceTile
