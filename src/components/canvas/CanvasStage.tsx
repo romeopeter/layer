@@ -512,14 +512,13 @@ export const CanvasStage = () => {
       style={{ position: "relative" }}
     >
       <div
-        className="canvas-artboard"
+        className="canvas-artboard shadow-artboard"
         style={{
           width: displayW,
           height: displayH,
           position: "relative",
           borderRadius: 12,
           overflow: "hidden",
-          boxShadow: "0 30px 80px rgba(0,0,0,0.4)",
         }}
       >
         <Stage

@@ -29,6 +29,12 @@ export const CustomizePanel = ({ onOpenModal }: { onOpenModal: () => void }) => 
 
       <SectionLabel>APPEARANCE</SectionLabel>
       <SwitchRow
+        label="DARK MODE"
+        description="Off shows Layer in light colors. Your design looks the same either way."
+        checked={preferences.theme === "dark"}
+        onCheckedChange={(dark) => setPreferences({ theme: dark ? "dark" : "light" })}
+      />
+      <SwitchRow
         label="SHOW DOTTED GRID"
         description="The dots behind the canvas. They never export."
         checked={preferences.dottedGrid}

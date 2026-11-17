@@ -149,7 +149,7 @@ export const LabeledSlider = ({
         {leftIcon}
         {label}
       </span>
-      <span className="rounded bg-p-50/[0.05] px-1.5 py-0.5 font-mono text-[10.5px] text-text">
+      <span className="rounded bg-p-200/[0.08] px-1.5 py-0.5 font-mono text-[10.5px] text-text">
         {value}
         {unit}
       </span>

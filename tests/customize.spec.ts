@@ -23,7 +23,7 @@ test.describe("Customize", () => {
     await openApp(page);
     expect(await page.evaluate(`document.documentElement.dataset.reduceMotion`)).toBe("true");
     await openCustomize(page);
-    const reduce = panel(page).getByRole("switch").nth(1);
+    const reduce = panel(page).getByRole("switch", { name: /REDUCE MOTION/ });
     await expect(reduce).toBeChecked();
 
     await panel(page).getByText("REDUCE MOTION").click();
@@ -34,6 +34,27 @@ test.describe("Customize", () => {
     await page.getByRole("button", { name: "Customize Sidebar" }).click();
     const duration = await page.evaluate(`getComputedStyle(document.querySelector('[role="dialog"]')).animationDuration`);
     expect(parseFloat(duration as string)).toBeLessThan(0.001);
+  });
+
+  test("dark mode off shows Layer in light colors, and the design stays the same", async ({ page }) => {
+    await openApp(page);
+    const surface = () => page.evaluate(`getComputedStyle(document.body).backgroundColor`);
+    const dark = await surface();
+    const before = await page.evaluate(`X.renderCanvasDataURL("png", 1)`);
+    await openCustomize(page);
+    const toggle = panel(page).getByRole("switch", { name: /DARK MODE/ });
+    await expect(toggle).toBeChecked();
+    await toggle.click();
+    expect(await page.evaluate(`document.documentElement.dataset.theme`)).toBe("light");
+    expect(await page.evaluate(`S.getState().preferences.theme`)).toBe("light");
+    expect(await surface()).not.toBe(dark);
+    // Light: each channel well above the middle.
+    const channels = ((await surface()) as string).match(/\d+/g)?.slice(0, 3).map(Number) ?? [];
+    expect(Math.min(...channels)).toBeGreaterThan(200);
+    // The theme is the interface's, never the design's.
+    expect(await page.evaluate(`X.renderCanvasDataURL("png", 1)`)).toBe(before);
+    await toggle.click();
+    expect(await page.evaluate(`document.documentElement.dataset.theme`)).toBe("dark");
   });
 
   test("the AI panel is gone from the app", async ({ page }) => {

@@ -204,11 +204,11 @@ export const App = () => {
                   <Upload className="h-5.5 w-5.5" />
                 </div>
 
-                <div className="font-display text-[18px] font-semibold tracking-[-0.01em] text-gray-100 cursor-pointer!">
+                <div className="font-display text-[18px] font-semibold tracking-[-0.01em] text-text cursor-pointer!">
                   <span>Drag and drop image to begin</span>
                 </div>
 
-                <div className="flex items-center gap-1.5 text-[13px] text-gray-400">
+                <div className="flex items-center gap-1.5 text-[13px] text-text-muted">
                   paste{" "}
                   <KeyBadge className="border-p-100 bg-p-50 text-p-600">
                     ⌘V
