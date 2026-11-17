@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Stage, Layer, Transformer } from "react-konva";
+import { Stage, Layer, Transformer, Group } from "react-konva";
 import Konva from "konva";
 import { useEditor } from "../../store/editor";
 import { Background } from "./Background";
@@ -32,9 +32,14 @@ import {
   type SnapCandidates,
 } from "@/lib/snapping";
 import { importImageFile } from "../../lib/importers";
+import { readClipboardImage } from "@/lib/host";
 import type { LayerElement, TextElement } from "@/types";
 import { MIN_FRAME_SIZE } from "@/lib/constants";
 import { FIXED_RATIO_SHAPES } from "@/lib/marks";
+import { BACKGROUND_CAMERA_NAME, CAMERA_GROUP_NAME } from "@/lib/motion/pose";
+import { playback } from "@/lib/motion/playback";
+import { ZOOM_SPOTS_LAYER_NAME, ZoomSpotsLayer } from "./ZoomSpotsLayer";
+import { IMAGE_FILE_TYPES } from "@/lib/importers";
 
 /* ------------------------------------------------------------------------ */
 
@@ -110,6 +115,11 @@ export const CanvasStage = () => {
   const snapEnabled = useEditor((s) => s.snapEnabled);
   const watermark = useEditor((s) => s.watermark);
   const markTool = useEditor((s) => s.markTool);
+  // Showing a moment of the animation: view-only until it's stopped.
+  const previewing = useEditor((s) => s.previewing);
+  // Zoom spots show while Animate is open, where they're set.
+  const spots = useEditor((s) => s.motion.spots);
+  const animateOpen = useEditor((s) => s.activeTool === "motion" && s.leftPanelOpen);
   const editingId = useEditor((s) => s.editingId);
   const cropId = useEditor((s) => s.cropId);
   const setCropId = useEditor((s) => s.setCropId);
@@ -238,15 +248,21 @@ export const CanvasStage = () => {
   // Handle clipboard paste to import images
   useEffect(() => {
     const onPaste = async (e: ClipboardEvent) => {
-      const items = e.clipboardData?.items;
-      if (!items) return;
-      for (const it of Array.from(items)) {
+      for (const it of Array.from(e.clipboardData?.items ?? [])) {
         if (it.type.startsWith("image/")) {
           const file = it.getAsFile();
           if (file) await importImageFile(file, addImage);
-          break;
+          return;
         }
       }
+      // Some apps put a picture on the clipboard in a form the webview doesn't pass
+      // on. On the desktop, the shell reads it, unless the paste is text into a field.
+      const target = e.target as HTMLElement | null;
+      const typing =
+        !!target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+      if (typing) return;
+      const picture = await readClipboardImage();
+      if (picture) await importImageFile(picture, addImage);
     };
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
@@ -260,8 +276,14 @@ export const CanvasStage = () => {
   ) => {
     const target = e.target as Konva.Node;
 
+    // A click on a preview goes back to editing, with everything where it was.
+    if (useEditor.getState().previewing) {
+      playback.stop();
+      return;
+    }
     if (isTransformerTarget(target)) return;
     if (target.getLayer()?.name() === MARK_HANDLES_LAYER_NAME) return;
+    if (target.getLayer()?.name() === ZOOM_SPOTS_LAYER_NAME) return;
     // Crop mode ends with Apply or Cancel, not a stray click.
     if (cropId || target.getLayer()?.name() === CROP_LAYER_NAME) return;
 
@@ -428,6 +450,7 @@ export const CanvasStage = () => {
         : ALL_ANCHORS;
 
   const handleElement =
+    !previewing &&
     selectedElement?.type === "shape" &&
     !selectedElement.locked &&
     !selectedElement.hidden &&
@@ -438,6 +461,7 @@ export const CanvasStage = () => {
       : null;
 
   const selectedToolbarElement =
+    !previewing &&
     (selectedElement?.type === "image" || selectedElement?.type === "text") &&
     !selectedElement.locked &&
     !selectedElement.hidden &&
@@ -496,14 +520,13 @@ export const CanvasStage = () => {
       style={{ position: "relative" }}
     >
       <div
-        className="canvas-artboard"
+        className="canvas-artboard shadow-artboard"
         style={{
           width: displayW,
           height: displayH,
           position: "relative",
           borderRadius: 12,
           overflow: "hidden",
-          boxShadow: "0 30px 80px rgba(0,0,0,0.4)",
         }}
       >
         <Stage
@@ -526,11 +549,14 @@ export const CanvasStage = () => {
         >
           {/* Background layer - non-interactive. Named so export can leave it out. */}
           <Layer name={BACKGROUND_LAYER_NAME} listening={false}>
-            <Background
-              bg={background}
-              width={canvas.width}
-              height={canvas.height}
-            />
+            {/* Filmed with the design, or with depth, moving less. See lib/motion/pose.ts. */}
+            <Group name={BACKGROUND_CAMERA_NAME}>
+              <Background
+                bg={background}
+                width={canvas.width}
+                height={canvas.height}
+              />
+            </Group>
           </Layer>
 
           {/* Main content layer - elements, transformer, and watermark.
@@ -539,11 +565,14 @@ export const CanvasStage = () => {
               repeating the snap logic in each of them. */}
           <Layer
             name={CONTENT_LAYER_NAME}
-            listening={!markTool && !cropElement}
+            listening={!markTool && !cropElement && !previewing}
             onDragStart={onElementDragStart}
             onDragMove={onElementDragMove}
             onDragEnd={onElementDragEnd}
           >
+            {/* The camera: still while editing, moved by an animation's pose.
+                The watermark and the Transformer stay outside it. */}
+            <Group name={CAMERA_GROUP_NAME}>
             {/* Render all canvas elements based on type */}
             {elements.map((el) => {
               const isSelected = selectedIds.includes(el.id);
@@ -585,10 +614,12 @@ export const CanvasStage = () => {
             })}
 
             {arrangement && <LayoutDecorNodes arrangement={arrangement} />}
+            </Group>
 
             {/* Transform handles for selected elements */}
             <Transformer
               ref={transformerRef}
+              visible={!previewing}
               rotateEnabled={!selectionInLayout}
               keepRatio={fixedRatio}
               enabledAnchors={selectionInLayout ? [] : anchors}
@@ -630,13 +661,17 @@ export const CanvasStage = () => {
             <MarkHandles el={handleElement} scale={scale} guidesRef={guidesRef} />
           )}
 
-          {arrangement && !markTool && !cropElement && (
+          {arrangement && !markTool && !cropElement && !previewing && (
             <LayoutSlotsLayer
               arrangement={arrangement}
               dropSlot={dropSlot}
               scale={scale}
               onAdd={addToLayout}
             />
+          )}
+
+          {animateOpen && !previewing && !markTool && !cropElement && spots.length > 0 && (
+            <ZoomSpotsLayer spots={spots} canvas={canvas} scale={scale} />
           )}
 
           {cropElement && (
@@ -656,7 +691,7 @@ export const CanvasStage = () => {
           ref={layoutFileRef}
           type="file"
           multiple
-          accept="image/png,image/jpeg,image/webp,image/svg+xml"
+          accept={IMAGE_FILE_TYPES}
           className="hidden"
           onChange={onLayoutFiles}
           aria-label="Add images to layout slot"

@@ -6,6 +6,7 @@ import { importImageFile } from "@/lib/importers";
 import { ScreenshotButton } from "./ScreenshotButton";
 import { StockImages } from "./StockImages";
 import { PanelHelp, SectionLabel, Linebreak } from "./primitives";
+import { IMAGE_FILE_TYPES } from "@/lib/importers";
 
 export const ImagesPanel = () => {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -39,7 +40,7 @@ export const ImagesPanel = () => {
         <input
           ref={fileRef}
           type="file"
-          accept="image/png,image/jpeg,image/webp,image/svg+xml"
+          accept={IMAGE_FILE_TYPES}
           multiple
           className="hidden"
           onChange={onPick}

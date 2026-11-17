@@ -11,6 +11,7 @@ import {
   // LinkMini,
   Linebreak,
 } from "./primitives";
+import { IMAGE_FILE_TYPES } from "@/lib/importers";
 
 export const UploadsPanel = () => {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -45,7 +46,7 @@ export const UploadsPanel = () => {
         <input
           ref={fileRef}
           type="file"
-          accept="image/png,image/jpeg,image/webp,image/svg+xml"
+          accept={IMAGE_FILE_TYPES}
           className="hidden"
           onChange={onPick}
           aria-label="Upload image"

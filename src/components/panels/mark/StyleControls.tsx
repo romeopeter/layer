@@ -79,7 +79,7 @@ export const OptionGrid = ({
       >
         <span
           className={cn(
-            "annot-ic flex h-[30px] w-[30px] items-center justify-center rounded-md bg-p-50/[0.04]",
+            "annot-ic flex h-[30px] w-[30px] items-center justify-center rounded-md bg-p-200/[0.06]",
           )}
         >
           {option.icon}

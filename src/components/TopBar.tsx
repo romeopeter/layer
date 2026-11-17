@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { OPEN_EXPORT_EVENT } from "@/lib/appActions";
+import { showUpdate } from "@/lib/updates";
 import { Undo, Redo, Eye, ChevronDown, Download } from "lucide-react";
 import { useEditor } from "@/store/editor";
 import { Button } from "@/components/ui/button";
@@ -11,6 +13,8 @@ import {
 } from "@/components/ui/popover";
 import { CanvasSizePicker } from "./CanvasSizePicker";
 import { ExportMenu } from "./ExportMenu";
+import { AnimationExportDialog } from "./AnimationExportDialog";
+import { useAnimationExport } from "./useAnimationExport";
 
 /* ------------------------------------------------------------------------------------------------ */
 
@@ -26,6 +30,15 @@ export const TopBar = ({ onPreview }: Props) => {
   const canRedo = useEditor((s) => s.canRedo);
   const [sizePickerOpen, setSizePickerOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const animation = useAnimationExport();
+  // A newer Layer, found by the quiet check after launch.
+  const updateReady = useEditor((s) => s.update.status === "available" && !s.update.open);
+  // File › Export… in the menu bar opens the same menu.
+  useEffect(() => {
+    const open = () => setExportOpen(true);
+    window.addEventListener(OPEN_EXPORT_EVENT, open);
+    return () => window.removeEventListener(OPEN_EXPORT_EVENT, open);
+  }, []);
 
   return (
     <header
@@ -115,6 +128,12 @@ export const TopBar = ({ onPreview }: Props) => {
       >
         {/* <Button variant="ghost" size="sm" className="cursor-pointer">Save as Template</Button> */}
 
+        {updateReady && (
+          <Button variant="ghost" size="sm" className="cursor-pointer" onClick={() => showUpdate(true)}>
+            <span className="h-1.5 w-1.5 rounded-full bg-t-400" aria-hidden /> Update
+          </Button>
+        )}
+
         <Popover open={exportOpen} onOpenChange={setExportOpen}>
           <PopoverTrigger asChild>
             <Button
@@ -126,7 +145,7 @@ export const TopBar = ({ onPreview }: Props) => {
             </Button>
           </PopoverTrigger>
           <PopoverContent align="end" sideOffset={6} className="w-72 p-2">
-            <ExportMenu onClose={() => setExportOpen(false)} />
+            <ExportMenu onClose={() => setExportOpen(false)} onExportAnimation={animation.start} />
           </PopoverContent>
         </Popover>
 
@@ -143,6 +162,8 @@ export const TopBar = ({ onPreview }: Props) => {
           Sign In <ArrowRight className="h-3 w-3" />
         </Button> */}
       </div>
+
+      <AnimationExportDialog job={animation.job} onCancel={animation.cancel} />
     </header>
   );
 };

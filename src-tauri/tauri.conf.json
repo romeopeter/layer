@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Layer",
-  "version": "0.1.0",
+  "version": "../package.json",
   "identifier": "layer.duowork.tech",
   "build": {
     "frontendDist": "../dist",
@@ -20,14 +20,19 @@
         "minHeight": 700,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
-        "trafficLightPosition": { "x": 16, "y": 22 },
+        "trafficLightPosition": {
+          "x": 16,
+          "y": 22
+        },
         "dragDropEnabled": false
       }
     ],
     "security": {
       "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https://cdn.pixabay.com https://pixabay.com; connect-src 'self' ipc: http://ipc.localhost data: blob:; object-src 'none'; base-uri 'self'",
       "devCsp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https://cdn.pixabay.com https://pixabay.com; connect-src 'self' ipc: http://ipc.localhost ws://127.0.0.1:5173 data: blob:; object-src 'none'; base-uri 'self'",
-      "dangerousDisableAssetCspModification": ["style-src"]
+      "dangerousDisableAssetCspModification": [
+        "style-src"
+      ]
     }
   },
   "bundle": {
@@ -40,5 +45,16 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDE1MTZENUZDRUMyRTNGMDcKUldRSFB5N3MvTlVXRlh1ck1udHViN1grRHRFTkd2N3N6a3JjbEhFRFNOVTFjTldhNE1xSWRyaVMK",
+      "endpoints": [
+        "https://github.com/romeopeter/label/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

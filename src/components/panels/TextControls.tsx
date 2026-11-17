@@ -2,27 +2,47 @@ import { AlignLeft, AlignCenter, AlignRight, Heading, Pilcrow } from "lucide-rea
 import { useEditor } from "@/store/editor";
 import type { TextElement } from "@/types";
 import { SYSTEM_FONTS } from "@/lib/constants";
+import { activeKit, brandFamilies } from "@/lib/brand/kits";
+import { brandText } from "@/lib/brand/apply";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { SectionLabel, LabeledSlider, ColorRow, PanelHelp } from "./primitives";
 
-/** Add › Text: puts a heading or body text on the canvas. Its settings are in Properties. */
+/** Add › Text: puts a heading or body text on the canvas, in the active brand if there is one. */
 export const TextAddPanel = () => {
   const addText = useEditor((s) => s.addText);
+  const kit = useEditor(activeKit);
+  const add = (variant: TextElement["variant"]) => addText(variant, kit ? brandText(kit, variant) : undefined);
   return (
     <div className="flex flex-col gap-2.5 px-4 pb-6 pt-4">
-      <Button variant="primary" size="block" className="cursor-pointer" onClick={() => addText("heading")}>
+      <Button variant="primary" size="block" className="cursor-pointer" onClick={() => add("heading")}>
         <Heading className="h-3.5 w-3.5" /> Add a heading
       </Button>
-      <Button variant="outline" size="block" className="cursor-pointer" onClick={() => addText("body")}>
+      <Button variant="outline" size="block" className="cursor-pointer" onClick={() => add("body")}>
         <Pilcrow className="h-3.5 w-3.5" /> Add body text
       </Button>
-      <PanelHelp>Double-click text on the canvas to type. Its font, size and color are on the right.</PanelHelp>
+      <PanelHelp>
+        {kit
+          ? `New text is set in ${kit.name}'s fonts and colors. Its settings are on the right.`
+          : "Double-click text on the canvas to type. Its font, size and color are on the right."}
+      </PanelHelp>
     </div>
   );
 };
+
+const FontItems = ({ label, families }: { label: string; families: string[] }) =>
+  families.length > 0 ? (
+    <SelectGroup>
+      <SelectLabel>{label}</SelectLabel>
+      {families.map((family) => (
+        <SelectItem key={family} value={family}>
+          <span style={{ fontFamily: family }}>{family}</span>
+        </SelectItem>
+      ))}
+    </SelectGroup>
+  ) : null;
 
 const useTextUpdate = (text: TextElement) => {
   const update = useEditor((s) => s.updateElement);
@@ -32,17 +52,20 @@ const useTextUpdate = (text: TextElement) => {
 /** What it says, its font, weight, size and alignment. */
 export const TypographyControls = ({ text }: { text: TextElement }) => {
   const set = useTextUpdate(text);
+  const kit = useEditor(activeKit);
+  // The brand's first, then Layer's own, then any other this text already uses.
+  const brand = kit ? brandFamilies(kit) : [];
+  const layer = SYSTEM_FONTS.filter((family) => !brand.includes(family));
+  const other = [text.fontFamily].filter((family) => !brand.includes(family) && !layer.includes(family));
   return (
     <div className="flex flex-col gap-2.5">
       <Textarea aria-label="Text" value={text.text} onChange={(e) => set({ text: e.target.value })} rows={3} />
       <Select value={text.fontFamily} onValueChange={(v) => set({ fontFamily: v })}>
         <SelectTrigger aria-label="Font"><SelectValue placeholder="Font" /></SelectTrigger>
         <SelectContent>
-          {SYSTEM_FONTS.map((f) => (
-            <SelectItem key={f} value={f}>
-              {f}
-            </SelectItem>
-          ))}
+          <FontItems label={kit ? kit.name : "Brand"} families={brand} />
+          <FontItems label="Layer" families={layer} />
+          <FontItems label="In this design" families={other} />
         </SelectContent>
       </Select>
       <ToggleGroup

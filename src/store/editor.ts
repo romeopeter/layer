@@ -21,7 +21,13 @@ import type {
 } from "../types";
 import type { PatternColorPair, PatternConfig } from "../types/pattern";
 import { DEFAULT_PATTERN_CONFIG } from "../types/pattern";
+import { withCarriedColors } from "../lib/patterns/resolveColorPair";
 import type { BackdropLook } from "../types/backdrop";
+import type { BrandKit, BrandKitsFile } from "../types/brand";
+import type { DesignMotion, ElementMotion, EnterMove, ZoomSpot } from "../types/motion";
+import type { Preferences } from "../types/preferences";
+import type { UpdateState } from "../lib/updates";
+import { DEFAULT_PREFERENCES, normalisePreferences } from "../lib/preferences";
 import { DEFAULT_BACKDROP } from "../lib/backdrops/presets";
 import { NO_EFFECTS } from "../lib/background/effects";
 import { DEFAULT_GRADIENT, normaliseBackground } from "../lib/background/normalise";
@@ -34,8 +40,20 @@ import {
   type BackgroundLook,
   type ShuffleMode,
 } from "../lib/background/looks";
-import { storeSavedBackgrounds } from "../lib/host";
-import { DEFAULT_WATERMARK, normaliseWatermark } from "../lib/watermark";
+import {
+  hasBrandKitsFile,
+  storeBrandKits,
+  storePatternColors,
+  storePreferences,
+  storeSavedBackgrounds,
+} from "../lib/host";
+import { packBrandKits } from "../lib/brand/storage";
+import { DEFAULT_WATERMARK, marginOf, normaliseWatermark } from "../lib/watermark";
+import { brandId, kitFromDesign, nextKitName } from "../lib/brand/kits";
+import { brandPatch } from "../lib/brand/apply";
+import { isLayerFont } from "../lib/brand/kits";
+import { normaliseProjectFonts } from "../lib/brand/normalise";
+import { fontFilesFor, registerFonts, setFontLoadedListener } from "../lib/fonts/registry";
 import { inLook, lookBackground, type DesignLook } from "../lib/looks";
 import { migrateElement, nextNumber } from "../lib/marks";
 import { placeFrame } from "../lib/mockups";
@@ -48,6 +66,15 @@ import {
   settleLayout,
   withoutLayoutCrop,
 } from "../lib/layouts";
+import {
+  DEFAULT_ELEMENT_MOTION,
+  DEFAULT_MOTION,
+  MAX_SPOTS,
+  MAX_SPOT_ZOOM,
+  MIN_SPOT_ZOOM,
+  normaliseElementMotion,
+  normaliseMotion,
+} from "../lib/motion/normalise";
 import { createHistory } from "./history";
 
 /* ------------------------------------------------------- */
@@ -108,7 +135,6 @@ const DEFAULT_GRID: GridState = {
  * the Properties panel instead, whatever this is.
  */
 type Tool =
-  | "ai"
   | "uploads"
   | "templates"
   | "images"
@@ -132,6 +158,10 @@ interface EditorState {
   selectedIds: string[];
   /** Null means images are placed by hand. */
   layout: CanvasLayout | null;
+  /** How the whole design is animated. Each object's own moves are on the object. */
+  motion: DesignMotion;
+  /** Transient: the canvas shows a moment of the animation and can't be edited. See `playback.ts`. */
+  previewing: boolean;
 
   activeTool: Tool;
   /** Whether the left panel is showing. Clicking the active rail group hides it. */
@@ -152,6 +182,16 @@ interface EditorState {
   lookTrails: Partial<Record<ShuffleMode, LookTrail>>;
   /** Backgrounds kept to use again in any project. Not part of the project. */
   savedBackgrounds: SavedBackground[];
+  /** Brands' logos, colours and fonts, for any project. Not part of the project or of undo. */
+  brandKits: BrandKit[];
+  /** The kit the rest of the editor offers: its colours in pickers, its fonts first. */
+  activeBrandKitId: string | null;
+  /** Transient: goes up when a font finishes loading, so text set in it is measured again. */
+  fontsVersion: number;
+  /** How the user likes Layer set up, from Customize. Not part of the project or of undo. */
+  preferences: Preferences;
+  /** Transient: Layer's own update, as far as it's got. See `lib/updates.ts`. */
+  update: UpdateState;
   /** Transient: what a canvas drag creates. Null means it selects and moves. */
   markTool: MarkTool | null;
   /** Style for the next mark, by category. Lasts the session, not the project. */
@@ -191,6 +231,20 @@ interface EditorState {
   deleteSavedBackground: (id: string) => void;
   /** Fills the list from the saved file, at launch. */
   setSavedBackgrounds: (list: SavedBackground[]) => void;
+  /** Fills the kits from the saved file, at launch, keeping any made since. */
+  setBrandKits: (file: BrandKitsFile) => void;
+  /** Starts a kit from the open design, and makes it the active one. */
+  createBrandKit: () => string;
+  duplicateBrandKit: (id: string) => void;
+  updateBrandKit: (id: string, patch: Partial<Omit<BrandKit, "id" | "updatedAt">>) => void;
+  deleteBrandKit: (id: string) => void;
+  setActiveBrandKit: (id: string) => void;
+  /** Puts the whole design in a brand, as one undo step. */
+  applyBrand: (id: string) => void;
+  /** Changes how Layer is set up, and keeps it for next time. */
+  setPreferences: (patch: Partial<Preferences>) => void;
+  /** Fills the preferences from their file, at launch. */
+  loadPreferences: (file: unknown) => void;
   /** Changes Layer's badge. */
   setBadge: (patch: Partial<WatermarkSettings["badge"]>) => void;
   /** Changes the user's own watermark. */
@@ -199,15 +253,31 @@ interface EditorState {
   setMarkStyle: (category: MarkCategory, patch: Partial<ShapeElement>) => void;
   setEditingId: (id: string | null) => void;
   setCropId: (id: string | null) => void;
+  /** Changes how the whole design is animated. */
+  setMotion: (patch: Partial<DesignMotion>) => void;
+  /** Adds a zoom spot framing the selected object, or the middle. Returns its id. */
+  addZoomSpot: () => string | null;
+  updateZoomSpot: (id: string, patch: Partial<Omit<ZoomSpot, "id">>) => void;
+  removeZoomSpot: (id: string) => void;
+  /** Changes one object's own moves. */
+  setElementMotion: (id: string, patch: Partial<ElementMotion>) => void;
+  /** Gives these objects the same way in, one after another in stacking order, as one undo step. */
+  bringInOneByOne: (ids: string[], enter: EnterMove) => void;
+  /** Takes every object's own moves off, as one undo step. */
+  clearElementMotion: () => void;
   undo: () => void;
   redo: () => void;
 
-  // pattern colour pairs (in-memory; see "Deferred Rust Implementations" in CLAUDE.md)
+  // pattern colour pairs the user made: pattern-colors.json on the desktop, the session on the web
   addCustomPatternPair: (base: string, accent: string, label?: string) => string;
   deleteCustomPatternPair: (id: string) => void;
+  /** Fills the pairs from their file, at launch, keeping any made since. */
+  setCustomPatternPairs: (pairs: PatternColorPair[]) => void;
 
   // elements
   addImage: (src: string, naturalWidth: number, naturalHeight: number) => string;
+  /** A logo: small, at the top left, with no corners or shadow, and outside any layout. */
+  addLogo: (src: string, naturalWidth: number, naturalHeight: number) => string;
   /** Records a picture's size once loaded, for images saved without it. Not an edit. */
   setNaturalSize: (id: string, width: number, height: number) => void;
   setLayout: (id: LayoutId | null) => void;
@@ -243,6 +313,29 @@ interface EditorState {
 
 const FIT_PASSES = 8;
 
+/** A background whose pattern names one of this install's custom pairs, with its colours written in. */
+const carryPatternColors = (background: BackgroundState): BackgroundState => {
+  const pattern = withCarriedColors(background.pattern, useEditor.getState().customPatternPairs);
+  return pattern === background.pattern ? background : { ...background, pattern };
+};
+
+/** Seconds between objects brought in one by one. */
+const STAGGER = 0.2;
+
+/** The object with no moves of its own. */
+const withoutMotion = (el: LayerElement): LayerElement => {
+  if (!el.motion) return el;
+  const copy = { ...el };
+  delete copy.motion;
+  return copy;
+};
+
+/** An object's moves from a file, checked, or none. */
+const withNormalMotion = (el: LayerElement): LayerElement => {
+  const motion = normaliseElementMotion(el.motion);
+  return motion ? { ...el, motion } : withoutMotion(el);
+};
+
 export const useEditor = create<EditorState>((set, get) => ({
   canvas: DEFAULT_CANVAS,
   background: DEFAULT_BACKGROUND,
@@ -251,6 +344,8 @@ export const useEditor = create<EditorState>((set, get) => ({
   customPatternPairs: [],
   selectedIds: [],
   layout: null,
+  motion: DEFAULT_MOTION,
+  previewing: false,
 
   activeTool: "images",
   leftPanelOpen: true,
@@ -264,6 +359,11 @@ export const useEditor = create<EditorState>((set, get) => ({
   patternDragging: false,
   lookTrails: {},
   savedBackgrounds: [],
+  brandKits: [],
+  activeBrandKitId: null,
+  fontsVersion: 0,
+  preferences: DEFAULT_PREFERENCES,
+  update: { status: "idle", open: false },
   markTool: null,
   markStyles: DEFAULT_MARK_STYLES,
   editingId: null,
@@ -381,6 +481,63 @@ export const useEditor = create<EditorState>((set, get) => ({
 
   setSavedBackgrounds: (list) => set({ savedBackgrounds: list }),
 
+  setBrandKits: (file) => {
+    // Kits made before the file finished loading are kept, after the saved ones.
+    const { brandKits, activeBrandKitId } = get();
+    const saved = new Set(file.kits.map((kit) => kit.id));
+    const made = brandKits.filter((kit) => !saved.has(kit.id));
+    set({ brandKits: [...file.kits, ...made], activeBrandKitId: activeBrandKitId ?? file.activeId });
+    if (made.length > 0) saveBrandKitsSoon();
+  },
+
+  createBrandKit: () => {
+    const { brandKits, background, elements, watermark, customPatternPairs } = get();
+    const kit = kitFromDesign({ background, elements, watermark, customPatternPairs }, nextKitName(brandKits));
+    set({ brandKits: [...brandKits, kit], activeBrandKitId: kit.id });
+    saveBrandKitsSoon();
+    return kit.id;
+  },
+
+  duplicateBrandKit: (id) => {
+    const { brandKits } = get();
+    const source = brandKits.find((kit) => kit.id === id);
+    if (!source) return;
+    const copy: BrandKit = { ...source, id: brandId("bk"), name: `${source.name} copy`, updatedAt: Date.now() };
+    const at = brandKits.indexOf(source) + 1;
+    set({ brandKits: [...brandKits.slice(0, at), copy, ...brandKits.slice(at)], activeBrandKitId: copy.id });
+    saveBrandKitsSoon();
+  },
+
+  updateBrandKit: (id, patch) => {
+    set({
+      brandKits: get().brandKits.map((kit) => (kit.id === id ? { ...kit, ...patch, updatedAt: Date.now() } : kit)),
+    });
+    saveBrandKitsSoon();
+  },
+
+  deleteBrandKit: (id) => {
+    const { brandKits, activeBrandKitId } = get();
+    const at = brandKits.findIndex((kit) => kit.id === id);
+    if (at === -1) return;
+    const next = brandKits.filter((kit) => kit.id !== id);
+    // The one beside it takes over, so the panel doesn't jump to the start.
+    const active = activeBrandKitId === id ? (next[Math.min(at, next.length - 1)]?.id ?? null) : activeBrandKitId;
+    set({ brandKits: next, activeBrandKitId: active });
+    saveBrandKitsSoon();
+  },
+
+  setActiveBrandKit: (id) => {
+    if (!get().brandKits.some((kit) => kit.id === id)) return;
+    set({ activeBrandKitId: id });
+    saveBrandKitsSoon();
+  },
+
+  applyBrand: (id) => {
+    const { brandKits, background, elements, watermark } = get();
+    const kit = brandKits.find((entry) => entry.id === id);
+    if (kit) set(brandPatch(kit, { background, elements, watermark }));
+  },
+
   setBadge: (patch) => {
     const { watermark } = get();
     set({ watermark: { ...watermark, badge: { ...watermark.badge, ...patch } } });
@@ -406,8 +563,88 @@ export const useEditor = create<EditorState>((set, get) => ({
 
   setEditingId: (id) => set({ editingId: id }),
   setCropId: (id) => set({ cropId: id, editingId: null }),
-  undo: () => history.undo(),
-  redo: () => history.redo(),
+
+  setMotion: (patch) => set({ motion: { ...get().motion, ...patch } }),
+
+  setPreferences: (patch) => {
+    set({ preferences: { ...get().preferences, ...patch } });
+    savePreferencesSoon();
+  },
+
+  loadPreferences: (file) => set({ preferences: normalisePreferences(file) }),
+
+  addZoomSpot: () => {
+    const { motion, canvas, elements, selectedIds } = get();
+    if (motion.spots.length >= MAX_SPOTS) return null;
+    const target = elements.find((el) => el.id === selectedIds[0] && !el.hidden);
+    // Framing the selected object with a little room round it, or the middle at twice the size.
+    const spot: ZoomSpot = target
+      ? {
+          id: "spot_" + Math.random().toString(36).slice(2, 9),
+          cx: (target.x + target.width / 2) / canvas.width,
+          cy: (target.y + target.height / 2) / canvas.height,
+          zoom: Math.min(
+            MAX_SPOT_ZOOM,
+            Math.max(
+              MIN_SPOT_ZOOM,
+              Math.min(canvas.width / (target.width * 1.3), canvas.height / (target.height * 1.3)),
+            ),
+          ),
+        }
+      : { id: "spot_" + Math.random().toString(36).slice(2, 9), cx: 0.5, cy: 0.5, zoom: 2 };
+    set({ motion: { ...motion, spots: [...motion.spots, spot] } });
+    return spot.id;
+  },
+
+  updateZoomSpot: (id, patch) => {
+    const { motion } = get();
+    set({ motion: { ...motion, spots: motion.spots.map((spot) => (spot.id === id ? { ...spot, ...patch } : spot)) } });
+  },
+
+  removeZoomSpot: (id) => {
+    const { motion } = get();
+    set({ motion: { ...motion, spots: motion.spots.filter((spot) => spot.id !== id) } });
+  },
+
+  setElementMotion: (id, patch) =>
+    set({
+      elements: get().elements.map((el) => {
+        if (el.id !== id) return el;
+        const next = { ...DEFAULT_ELEMENT_MOTION, ...el.motion, ...patch };
+        // No moves at all is the same as none, so a file stays as it was.
+        if (next.enter === "none" && next.keep === "none") return withoutMotion(el);
+        return { ...el, motion: next } as LayerElement;
+      }),
+    }),
+
+  bringInOneByOne: (ids, enter) => {
+    const chosen = new Set(ids);
+    let order = 0;
+    set({
+      elements: get().elements.map((el) => {
+        if (!chosen.has(el.id) || el.hidden) return el;
+        const motion: ElementMotion = {
+          ...DEFAULT_ELEMENT_MOTION,
+          ...el.motion,
+          enter,
+          start: Math.round(order * STAGGER * 10) / 10,
+        };
+        order += 1;
+        return { ...el, motion } as LayerElement;
+      }),
+    });
+  },
+
+  clearElementMotion: () => set({ elements: get().elements.map(withoutMotion) }),
+  // Undo is an edit, so it ends a preview first: the canvas shows the design at rest.
+  undo: () => {
+    if (get().previewing) set({ previewing: false });
+    history.undo();
+  },
+  redo: () => {
+    if (get().previewing) set({ previewing: false });
+    history.redo();
+  },
 
   addCustomPatternPair: (base, accent, label) => {
     const pair: PatternColorPair = {
@@ -418,11 +655,19 @@ export const useEditor = create<EditorState>((set, get) => ({
       label,
     };
     set({ customPatternPairs: [...get().customPatternPairs, pair] });
+    void storePatternColors(get().customPatternPairs).catch((error) => console.error(error));
     return pair.id;
   },
 
-  deleteCustomPatternPair: (id) =>
-    set({ customPatternPairs: get().customPatternPairs.filter((p) => p.id !== id) }),
+  deleteCustomPatternPair: (id) => {
+    set({ customPatternPairs: get().customPatternPairs.filter((p) => p.id !== id) });
+    void storePatternColors(get().customPatternPairs).catch((error) => console.error(error));
+  },
+
+  setCustomPatternPairs: (pairs) => {
+    const made = get().customPatternPairs.filter((pair) => !pairs.some((kept) => kept.id === pair.id));
+    set({ customPatternPairs: [...pairs, ...made] });
+  },
 
   addImage: (src, naturalWidth, naturalHeight) => {
     const { canvas, elements } = get();
@@ -459,6 +704,32 @@ export const useEditor = create<EditorState>((set, get) => ({
         ? { layout: { ...layout, slots: layout.slots.map((slot, i) => (i === free ? { id: el.id } : slot)) } }
         : {}),
     });
+    return el.id;
+  },
+
+  addLogo: (src, naturalWidth, naturalHeight) => {
+    const { canvas, elements } = get();
+    const shorter = Math.min(canvas.width, canvas.height);
+    const ratio = Math.min((canvas.width * 0.3) / naturalWidth, (shorter * 0.2) / naturalHeight);
+    const margin = marginOf(canvas) * 2;
+    const el: ImageElement = {
+      id: uid(),
+      type: "image",
+      x: margin,
+      y: margin,
+      width: naturalWidth * ratio,
+      height: naturalHeight * ratio,
+      rotation: 0,
+      opacity: 1,
+      src,
+      naturalWidth,
+      naturalHeight,
+      deviceFrame: null,
+      cornerRadius: 0,
+      shadow: { enabled: false, color: "rgba(0,0,0,0.45)", blur: 60, offsetX: 0, offsetY: 30 },
+      transform: "rotate3d(0deg, 0deg, 0deg)",
+    };
+    set({ elements: [...elements, el], selectedIds: [el.id] });
     return el.id;
   },
 
@@ -739,6 +1010,8 @@ export const useEditor = create<EditorState>((set, get) => ({
   },
 
   loadProject: (project) => {
+    // The fonts it carries load in the background; text is measured again as each arrives.
+    void registerFonts(normaliseProjectFonts(project.fonts));
     set({
       markTool: null,
       editingId: null,
@@ -750,10 +1023,12 @@ export const useEditor = create<EditorState>((set, get) => ({
       },
       // Older files lack whole parts (pattern, backdrop, effects), and keep some
       // settings where they used to live.
-      background: normaliseBackground(project.background, DEFAULT_BACKGROUND),
+      background: carryPatternColors(normaliseBackground(project.background, DEFAULT_BACKGROUND)),
       lookTrails: {},
-      elements: project.elements.map(migrateElement),
+      elements: project.elements.map(migrateElement).map(withNormalMotion),
       watermark: normaliseWatermark(project.watermark),
+      motion: normaliseMotion(project.motion),
+      previewing: false,
       layout:
         project.layout && layoutOf(project.layout.id) && Array.isArray(project.layout.slots)
           ? project.layout
@@ -763,14 +1038,26 @@ export const useEditor = create<EditorState>((set, get) => ({
     history.reset();
   },
 
-  toProject: () => ({
-    version: 1,
-    canvas: { width: get().canvas.width, height: get().canvas.height },
-    background: get().background,
-    elements: get().elements,
-    watermark: get().watermark,
-    layout: get().layout,
-  }),
+  toProject: () => {
+    const { canvas, elements, watermark, layout, motion } = get();
+    // A custom pattern pair's colours go with the project, so it opens the same anywhere.
+    const background = carryPatternColors(get().background);
+    // Fonts that aren't Layer's own go with the project, so it opens the same anywhere.
+    const families = new Set(
+      elements.flatMap((el) => (el.type === "text" && !isLayerFont(el.fontFamily) ? [el.fontFamily] : [])),
+    );
+    const fonts = [...families].flatMap(fontFilesFor);
+    return {
+      version: 1,
+      canvas: { width: canvas.width, height: canvas.height },
+      background,
+      elements,
+      watermark,
+      layout,
+      motion,
+      ...(fonts.length > 0 ? { fonts } : {}),
+    };
+  },
 
   resetProject: () => {
     set({
@@ -782,11 +1069,47 @@ export const useEditor = create<EditorState>((set, get) => ({
       lookTrails: {},
       elements: [],
       layout: null,
+      motion: DEFAULT_MOTION,
+      previewing: false,
       selectedIds: [],
     });
     history.reset();
   },
 }));
+
+/** Writes preferences to their file once switches stop being flicked. */
+let preferencesSave: ReturnType<typeof setTimeout> | undefined;
+const savePreferencesSoon = () => {
+  clearTimeout(preferencesSave);
+  preferencesSave = setTimeout(() => {
+    void storePreferences(useEditor.getState().preferences).catch((error) => console.error(error));
+  }, 200);
+};
+
+/** How long kit changes wait before they're written: a colour picker changes many times a second. */
+const BRAND_SAVE_DELAY = 400;
+let brandSave: ReturnType<typeof setTimeout> | undefined;
+
+/** Writes the kits to their file, once changes stop. Kits with fonts in them run to megabytes. */
+/**
+ * One write at a time. Writing the kits clears the font and logo files they no
+ * longer use, so an older write mustn't land after a newer one has kept its files.
+ */
+let brandWrites: Promise<void> = Promise.resolve();
+
+const saveBrandKitsSoon = () => {
+  clearTimeout(brandSave);
+  brandSave = setTimeout(() => {
+    brandWrites = brandWrites
+      .then(async () => {
+        const { brandKits, activeBrandKitId } = useEditor.getState();
+        const file = { version: 1 as const, activeId: activeBrandKitId, kits: brandKits };
+        // On the desktop, fonts and logos are kept as files beside the JSON.
+        await storeBrandKits(hasBrandKitsFile ? await packBrandKits(file) : file);
+      })
+      .catch((error) => console.error(error));
+  }, BRAND_SAVE_DELAY);
+};
 
 const documentOf = ({
   canvas,
@@ -795,7 +1118,9 @@ const documentOf = ({
   uploadedImages,
   layout,
   watermark,
+  motion,
 }: EditorState) => ({
+  motion,
   canvas,
   background,
   elements,
@@ -840,10 +1165,23 @@ useEditor.subscribe((state, previous) => {
     state.layout !== previous.layout ||
     state.background !== previous.background ||
     state.canvas !== previous.canvas ||
-    state.watermark !== previous.watermark
+    state.watermark !== previous.watermark ||
+    state.motion !== previous.motion
   ) {
     history.changed();
   }
 });
+
+// A kit's fonts are on the page whenever the kit is, so its text can use them.
+useEditor.subscribe((state, previous) => {
+  if (state.brandKits === previous.brandKits) return;
+  void registerFonts(
+    state.brandKits.flatMap((kit) =>
+      kit.fonts.flatMap((font) => font.files.map((file) => ({ family: font.family, ...file }))),
+    ),
+  );
+});
+
+setFontLoadedListener(() => useEditor.setState((state) => ({ fontsVersion: state.fontsVersion + 1 })));
 
 export type { Tool };

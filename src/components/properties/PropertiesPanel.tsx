@@ -11,21 +11,27 @@ import {
 import { useEditor } from "@/store/editor";
 import type { ImageElement, LayerElement, ShapeElement, TextElement } from "@/types";
 import { cn } from "@/lib/utils";
-import { fileToDataURL } from "@/lib/importers";
 import { layerName } from "@/lib/layerNames";
 import { layoutOf } from "@/lib/layouts";
+import { activeKit } from "@/lib/brand/kits";
 import { DEVICES } from "@/lib/mockups";
+import { CAMERA_MOVES, labelOf } from "@/lib/motion/moves";
+import { hasMotion, movesOnItsOwn } from "@/lib/motion/normalise";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { CanvasSizePicker } from "@/components/CanvasSizePicker";
-import { LabeledSlider, PanelHelp, SwitchRow } from "@/components/panels/primitives";
+import { LabeledSlider, PanelHelp, PanelLink } from "@/components/panels/primitives";
 import { CornerControls } from "@/components/panels/CornerControls";
 import { ShadowControls } from "@/components/panels/ShadowControls";
 import { PositionControls } from "@/components/panels/PositionControls";
 import { TiltControls } from "@/components/panels/TiltControls";
 import { ImageEditSection } from "@/components/panels/ImageEditSection";
 import { StyleControls } from "@/components/panels/mark/StyleControls";
+import { ElementMotionControls } from "@/components/panels/ElementMotionControls";
 import { SpacingControls, TextColorControls, TypographyControls } from "@/components/panels/TextControls";
+import { IMAGE_FILE_TYPES, readImageFile } from "@/lib/importers";
+import { showError } from "@/lib/host";
+import { looksLikeImage } from "@/lib/heic";
 
 /* ------------------------------------------------------------------------------------------- */
 
@@ -97,8 +103,6 @@ const OpacityControl = ({ el }: { el: LayerElement }) => {
   );
 };
 
-const MotionNote = () => <PanelHelp>Animation arrives in Phase 2. Animate on the left shows what's planned.</PanelHelp>;
-
 /* ------------------------------------------------------------------------------------------- */
 
 /** Swaps the picture, keeping the image's place, width and settings. */
@@ -108,8 +112,14 @@ const ReplaceImage = ({ image }: { image: ImageElement }) => {
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = "";
-    if (!file?.type.startsWith("image/")) return;
-    const src = await fileToDataURL(file);
+    if (!file || !looksLikeImage(file)) return;
+    let src: string;
+    try {
+      src = await readImageFile(file);
+    } catch (error) {
+      await showError(error instanceof Error ? error.message : "Layer couldn't read that picture.");
+      return;
+    }
     const picture = new Image();
     picture.src = src;
     await picture.decode();
@@ -130,7 +140,7 @@ const ReplaceImage = ({ image }: { image: ImageElement }) => {
       <input
         ref={inputRef}
         type="file"
-        accept="image/png,image/jpeg,image/webp,image/svg+xml"
+        accept={IMAGE_FILE_TYPES}
         className="hidden"
         onChange={onFile}
         aria-label="Choose a picture to replace this one"
@@ -169,8 +179,8 @@ const ImageProperties = ({ image }: { image: ImageElement }) => {
       <PropertySection id="image.position" title="Position & size">
         <PositionControls el={image} />
       </PropertySection>
-      <PropertySection id="image.motion" title="Motion">
-        <MotionNote />
+      <PropertySection id="image.motion" title="Animate">
+        <ElementMotionControls el={image} />
       </PropertySection>
     </>
   );
@@ -195,8 +205,8 @@ const TextProperties = ({ text }: { text: TextElement }) => (
     <PropertySection id="text.position" title="Position & size">
       <PositionControls el={text} />
     </PropertySection>
-    <PropertySection id="text.motion" title="Motion">
-      <MotionNote />
+    <PropertySection id="text.motion" title="Animate">
+      <ElementMotionControls el={text} />
     </PropertySection>
   </>
 );
@@ -215,11 +225,22 @@ const ShapeProperties = ({ shape }: { shape: ShapeElement }) => {
           <PositionControls el={shape} />
         </PropertySection>
       )}
-      <PropertySection id="shape.motion" title="Motion">
-        <MotionNote />
+      <PropertySection id="shape.motion" title="Animate">
+        <ElementMotionControls el={shape} />
       </PropertySection>
     </>
   );
+};
+
+/** The design's animation in a few words, such as "Push in · 6s · 3 objects". */
+const animationSummary = (s: ReturnType<typeof useEditor.getState>) => {
+  if (!hasMotion(s.motion, s.elements, s.background)) return "No motion";
+  const objects = s.elements.filter(movesOnItsOwn).length;
+  return [
+    labelOf(CAMERA_MOVES, s.motion.camera),
+    `${s.motion.length}s`,
+    ...(objects > 0 ? [objects === 1 ? "1 object" : `${objects} objects`] : []),
+  ].join(" · ");
 };
 
 const CanvasProperties = () => {
@@ -228,11 +249,9 @@ const CanvasProperties = () => {
   const layout = useEditor((s) => s.layout);
   const layerCount = useEditor((s) => s.elements.length);
   const watermark = useEditor((s) => s.watermark);
-  const grid = useEditor((s) => s.grid);
-  const toggleGrid = useEditor((s) => s.toggleGrid);
-  const snapEnabled = useEditor((s) => s.snapEnabled);
-  const toggleSnap = useEditor((s) => s.toggleSnap);
+  const kit = useEditor(activeKit);
   const setActiveTool = useEditor((s) => s.setActiveTool);
+  const motionSummary = useEditor(animationSummary);
   const [sizeOpen, setSizeOpen] = useState(false);
 
   const backgroundName = {
@@ -281,20 +300,21 @@ const CanvasProperties = () => {
           onClick={() => setActiveTool("layers")}
         />
       </PropertySection>
-      <PropertySection id="canvas.guides" title="Grid & guides">
-        <SwitchRow label="GRID" checked={grid.enabled} onCheckedChange={() => toggleGrid()} />
-        <SwitchRow
-          label="SNAP TO GUIDES"
-          description="Things line up with the canvas and each other as you drag."
-          checked={snapEnabled}
-          onCheckedChange={() => toggleSnap()}
-        />
-      </PropertySection>
       <PropertySection id="canvas.watermark" title="Watermark">
         <Jump
           value={(watermark.badge.show ? "Layer badge" : "No badge") + own}
           action="Edit"
           onClick={() => setActiveTool("watermark")}
+        />
+      </PropertySection>
+      <PropertySection id="canvas.animate" title="Animate">
+        <Jump value={motionSummary} action="Open Animate" onClick={() => setActiveTool("motion")} />
+      </PropertySection>
+      <PropertySection id="canvas.brand" title="Brand">
+        <Jump
+          value={kit ? kit.name : "No brand kit"}
+          action={kit ? "Open brand kit" : "Make a brand kit"}
+          onClick={() => setActiveTool("brands")}
         />
       </PropertySection>
     </>
@@ -319,6 +339,10 @@ export const PropertiesPanel = () => {
         <Heading icon={<Layers className="h-3.5 w-3.5" />} kind={`${selectedIds.length} layers`} />
         <div className="px-4 py-3">
           <PanelHelp>Drag to move them together. Select one on its own to change its settings.</PanelHelp>
+          <PanelHelp>
+            To bring them in one after another, use
+            <PanelLink onClick={() => useEditor.getState().setActiveTool("motion")}>Animate</PanelLink>
+          </PanelHelp>
         </div>
       </>
     );

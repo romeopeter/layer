@@ -1,13 +1,30 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { Upload, Minus, Plus, Delete, Command } from "lucide-react";
 import { DEFAULT_BACKGROUND, useEditor, ZOOM_MAX, ZOOM_MIN } from "@/store/editor";
-import { loadSavedBackgrounds } from "@/lib/host";
+import {
+  loadBrandKits,
+  loadPatternColors,
+  loadPreferences,
+  loadSavedBackgrounds,
+  onMenu,
+  syncMenu,
+} from "@/lib/host";
+import { runFromKey, runFromMenu, setUpdateChecker, type AppAction } from "@/lib/appActions";
+import { checkForUpdates, QUIET_CHECK_DELAY } from "@/lib/updates";
+import { UpdateDialog } from "@/components/UpdateDialog";
+import { normaliseCustomPairs } from "@/lib/patterns/customPairs";
+import { reducesMotion } from "@/lib/preferences";
+import { cn } from "@/lib/utils";
 import { normaliseSavedBackgrounds } from "@/lib/background/normalise";
+import { normaliseBrandKits } from "@/lib/brand/normalise";
+import { unpackBrandKits } from "@/lib/brand/storage";
 import { TopBar } from "@/components/TopBar";
 import { LeftRail } from "@/components/LeftRail";
 import { PanelHost } from "@/components/panels";
 import { PropertiesPanel } from "@/components/properties/PropertiesPanel";
 import { CanvasStage } from "@/components/canvas/CanvasStage";
+import { PlayBar } from "@/components/canvas/PlayBar";
+import { playback } from "@/lib/motion/playback";
 import { GridControl } from "@/components/canvas/GridControl";
 import { SocialPreviewModal } from "@/components/SocialPreviewModal";
 import { CustomizeSidebarModal } from "@/components/CustomizeSidebarModal";
@@ -15,11 +32,8 @@ import { KeyBadge } from "@/components/ui/key-badge";
 import { importImageFile } from "@/lib/importers";
 import { arrangeLayout, slotAt } from "@/lib/layouts";
 import { getStage } from "@/components/canvas/stageRef";
-import {
-  exportCanvas,
-  copyCanvasToClipboard,
-  renderCanvasDataURL,
-} from "@/lib/exporters";
+import { copyCanvasToClipboard, renderCanvasDataURL } from "@/lib/exporters";
+import { looksLikeImage } from "@/lib/heic";
 
 /* ------------------------------------------------------------------------------------------ */
 
@@ -37,6 +51,29 @@ const layoutSlotAt = (clientX: number, clientY: number) => {
   );
 };
 
+/** The menu bar's shortcuts, by key. Each also works on the web. */
+const SHORTCUTS: Record<string, AppAction> = {
+  z: "undo",
+  y: "redo",
+  e: "export-png",
+  s: "save",
+  o: "open",
+  d: "duplicate",
+  a: "select-all",
+  "=": "zoom-in",
+  "+": "zoom-in",
+  "-": "zoom-out",
+  "0": "zoom-fit",
+  ",": "settings",
+};
+const SHIFTED: Record<string, AppAction> = { z: "redo", e: "export" };
+
+const shortcutOf = (e: KeyboardEvent): AppAction | null => {
+  if (!(e.metaKey || e.ctrlKey)) return null;
+  const key = e.key.toLowerCase();
+  return (e.shiftKey ? SHIFTED[key] : undefined) ?? SHORTCUTS[key] ?? null;
+};
+
 export const App = () => {
   const activeTool = useEditor((s) => s.activeTool);
   const leftPanelOpen = useEditor((s) => s.leftPanelOpen);
@@ -49,19 +86,62 @@ export const App = () => {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
   const [customizeOpen, setCustomizeOpen] = useState(false);
-  const [hiddenTools, setHiddenTools] = useState<Record<string, boolean>>({});
+  const preferences = useEditor((s) => s.preferences);
+  const setPreferences = useEditor((s) => s.setPreferences);
   const [dragOver, setDragOver] = useState(false);
 
-  // Backgrounds saved in earlier sessions, from the desktop's file.
+  // Backgrounds, brand kits, pattern colours and preferences from earlier sessions, from the desktop's files.
   useEffect(() => {
     void loadSavedBackgrounds().then((list) =>
       useEditor.getState().setSavedBackgrounds(normaliseSavedBackgrounds(list, DEFAULT_BACKGROUND)),
     );
+    void loadBrandKits()
+      .then(unpackBrandKits)
+      .then((file) => useEditor.getState().setBrandKits(normaliseBrandKits(file)));
+    void loadPreferences().then((file) => file && useEditor.getState().loadPreferences(file));
+    void loadPatternColors().then((list) => useEditor.getState().setCustomPatternPairs(normaliseCustomPairs(list)));
   }, []);
 
-  const toggleVisible = useCallback((k: string) => {
-    setHiddenTools((h) => ({ ...h, [k]: !h[k] }));
+  // The desktop's menu bar runs the same actions as the shortcuts.
+  useEffect(() => onMenu((id) => void runFromMenu(id)), []);
+
+  // Layer's own updates: Check for Updates asks at once; built apps also ask quietly after launch.
+  useEffect(() => {
+    setUpdateChecker(() => checkForUpdates({ manual: true }));
+    if (!import.meta.env.PROD) return;
+    const timer = setTimeout(() => void checkForUpdates({ manual: false }), QUIET_CHECK_DELAY);
+    return () => clearTimeout(timer);
   }, []);
+  const gridOn = useEditor((s) => s.grid.enabled);
+  useEffect(() => {
+    void syncMenu({ darkMode: preferences.theme === "dark", grid: gridOn });
+  }, [preferences.theme, gridOn]);
+
+  // The theme and motion are set on the page, where the styles read them.
+  useEffect(() => {
+    const root = document.documentElement;
+    root.dataset.theme = preferences.theme;
+    const apply = () => {
+      root.dataset.reduceMotion = String(reducesMotion(preferences));
+    };
+    apply();
+    // Following the system's setting, a change there shows at once.
+    const system = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+    system?.addEventListener("change", apply);
+    return () => system?.removeEventListener("change", apply);
+  }, [preferences]);
+
+  const hiddenTools = useMemo(
+    () => Object.fromEntries(preferences.hiddenGroups.map((key) => [key, true])),
+    [preferences.hiddenGroups],
+  );
+  const toggleVisible = useCallback(
+    (key: string) => {
+      const hidden = useEditor.getState().preferences.hiddenGroups;
+      setPreferences({ hiddenGroups: hidden.includes(key) ? hidden.filter((k) => k !== key) : [...hidden, key] });
+    },
+    [setPreferences],
+  );
 
   const openPreview = useCallback(async () => {
     setPreviewDataUrl(await renderCanvasDataURL("png", 1));
@@ -82,17 +162,11 @@ export const App = () => {
             (target as HTMLInputElement).type !== "color"));
       if (inField) return;
 
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+      // The menu bar's shortcuts, which also work on the web, where there's no menu bar.
+      const shortcut = shortcutOf(e);
+      if (shortcut) {
         e.preventDefault();
-        const { undo, redo } = useEditor.getState();
-        if (e.shiftKey) redo();
-        else undo();
-      } else if ((e.metaKey || e.ctrlKey) && e.key === "y") {
-        e.preventDefault();
-        useEditor.getState().redo();
-      } else if ((e.metaKey || e.ctrlKey) && e.key === "e") {
-        e.preventDefault();
-        exportCanvas("png", 2);
+        void runFromKey(shortcut);
       } else if ((e.metaKey || e.ctrlKey) && e.key === "c") {
         if (useEditor.getState().selectedIds.length > 0) {
           e.preventDefault();
@@ -104,6 +178,7 @@ export const App = () => {
       } else if (e.key === "Escape") {
         setPreviewOpen(false);
         setCustomizeOpen(false);
+        playback.stop();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -124,7 +199,7 @@ export const App = () => {
     // The first image goes in the slot it was dropped on; the rest fill what's free.
     let slot = layoutSlotAt(e.clientX, e.clientY);
     for (const file of Array.from(e.dataTransfer.files)) {
-      if (!file.type.startsWith("image/")) continue;
+      if (!looksLikeImage(file)) continue;
       const chosen = slot;
       await importImageFile(file, (src, width, height) =>
         chosen === null
@@ -157,7 +232,12 @@ export const App = () => {
         )}
 
         <main className="relative min-w-0 flex-1 overflow-hidden bg-canvas">
-          <div className="size-full bg-dot-grid absolute inset-0 bottom-20 flex items-center justify-center">
+          <div
+            className={cn(
+              "absolute inset-0 bottom-20 flex size-full items-center justify-center",
+              preferences.dottedGrid && "bg-dot-grid",
+            )}
+          >
             <CanvasStage />
 
             {/* Out of the way once a tool is armed: its icon takes pointer events,
@@ -168,11 +248,11 @@ export const App = () => {
                   <Upload className="h-5.5 w-5.5" />
                 </div>
 
-                <div className="font-display text-[18px] font-semibold tracking-[-0.01em] text-gray-100 cursor-pointer!">
+                <div className="font-display text-[18px] font-semibold tracking-[-0.01em] text-text cursor-pointer!">
                   <span>Drag and drop image to begin</span>
                 </div>
 
-                <div className="flex items-center gap-1.5 text-[13px] text-gray-400">
+                <div className="flex items-center gap-1.5 text-[13px] text-text-muted">
                   paste{" "}
                   <KeyBadge className="border-p-100 bg-p-50 text-p-600">
                     ⌘V
@@ -187,8 +267,9 @@ export const App = () => {
             <div className="pointer-events-none absolute inset-3 z-50 flex items-center justify-center rounded-2xl border-2 border-dashed border-p-300 bg-p-600/8 text-sm font-medium text-text" />
           )}
 
-          {/* Zoom buttons */}
-          <div className="absolute bottom-23 left-4 z-6 flex items-center gap-1 rounded-lg border border-hairline bg-panel p-1">
+          {/* Zoom, grid and play: how you look at the canvas. None of them exports. */}
+          <div className="absolute bottom-23 left-4 z-6 flex items-center gap-2">
+          <div className="flex items-center gap-1 rounded-lg border border-hairline bg-panel p-1">
             <button
               type="button"
               title="Zoom out"
@@ -220,6 +301,8 @@ export const App = () => {
             <div className="mx-0.5 h-4.5 w-px bg-hairline" />
             <GridControl />
           </div>
+          <PlayBar />
+          </div>
 
           {/* Paste, Export and Delete */}
           <div className="absolute bottom-23 right-4 z-6 flex items-center gap-3.5 whitespace-nowrap">
@@ -247,6 +330,8 @@ export const App = () => {
         </main>
         <PropertiesPanel />
       </div>
+
+      <UpdateDialog />
 
       <SocialPreviewModal
         open={previewOpen}

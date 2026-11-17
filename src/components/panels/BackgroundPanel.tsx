@@ -20,6 +20,8 @@ import { ShuffleRow } from "./background/ShuffleRow";
 import { SavedBackgrounds } from "./background/SavedBackgrounds";
 import { EffectsControls } from "./background/EffectsControls";
 import { choiceClass } from "./choice";
+import { IMAGE_FILE_TYPES, readImageFile } from "@/lib/importers";
+import { showError } from "@/lib/host";
 
 const SWATCHES = [
   "#6E5BFF",
@@ -53,10 +55,13 @@ export const BackgroundPanel = () => {
 
   const onUploadImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-    const dataUrl = await fileToDataURL(file);
-    setBg({ mode: "image", imageSrc: dataUrl });
     e.target.value = "";
+    if (!file) return;
+    try {
+      setBg({ mode: "image", imageSrc: await readImageFile(file) });
+    } catch (error) {
+      await showError(error instanceof Error ? error.message : "Layer couldn't read that picture.");
+    }
   };
 
   return (
@@ -182,7 +187,7 @@ export const BackgroundPanel = () => {
             <input
               ref={fileRef}
               type="file"
-              accept="image/png,image/jpeg,image/webp"
+              accept={IMAGE_FILE_TYPES}
               className="hidden"
               onChange={onUploadImage}
               aria-label="Upload background image"

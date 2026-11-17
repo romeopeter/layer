@@ -30,7 +30,7 @@ test("Properties follows the selection: canvas, image, text, element, and back",
 
   const image = await addTwoToneImage(page);
   expect(await showing(page)).toBe("Image");
-  for (const title of ["Edit", "Appearance", "Shadow", "3D", "Mockup", "Position & size", "Motion"]) {
+  for (const title of ["Edit", "Appearance", "Shadow", "3D", "Mockup", "Position & size", "Animate"]) {
     await expect(section(page, title)).toBeVisible();
   }
   await expect(section(page, "Typography")).toHaveCount(0);
@@ -135,6 +135,21 @@ test("Replace image swaps the picture and keeps its place and width", async ({ p
   await expect.poll(() => page.evaluate(`S.getState().elements[0].src`)).not.toBe(before.src);
   const after: { x: number; y: number; width: number; id: string } = await page.evaluate(`S.getState().elements[0]`);
   expect(after).toMatchObject({ id, x: before.x, y: before.y, width: before.width });
+});
+
+test("the grid and snapping are set in one place, by zoom", async ({ page }) => {
+  const errors = await openApp(page);
+  // Canvas Properties is about the design; how you look at it stays with zoom.
+  await expect(section(page, "Grid & guides")).toHaveCount(0);
+  await expect(properties(page).getByRole("switch")).toHaveCount(0);
+
+  const gridOn = () => page.evaluate<boolean>(`S.getState().grid.enabled`);
+  const before = await gridOn();
+  await page.getByRole("button", { name: "Show grid" }).click();
+  expect(await gridOn()).toBe(!before);
+  await page.getByRole("button", { name: "View settings" }).click();
+  await expect(page.getByText("SNAP TO OBJECTS")).toHaveCount(1);
+  expect(errors).toEqual([]);
 });
 
 test("text shows its shadow", async ({ page }) => {

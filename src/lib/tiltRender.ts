@@ -167,9 +167,56 @@ const createRenderer = () => {
 
   const texture = gl.createTexture();
   const maxSide = Math.min(MAX_SIDE, gl.getParameter(gl.MAX_TEXTURE_SIZE) as number);
+  /**
+   * Pictures kept on the GPU while an animation plays: each frame turns them a
+   * little, and uploading every picture again, every frame, is most of the work.
+   */
+  const kept = new Map<TexImageSource, WebGLTexture>();
 
-  /** Draws `picture` tilted into `out`, at `scale` pixels to each canvas unit. Returns where it goes. */
-  const render = (picture: TexImageSource, look: TiltLook, requestedScale: number, out: HTMLCanvasElement) => {
+  const upload = (target: WebGLTexture | null, picture: TexImageSource) => {
+    gl.bindTexture(gl.TEXTURE_2D, target);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, picture);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  };
+
+  /** Binds the picture: from the kept ones when it can stay, otherwise uploaded afresh. */
+  const bind = (picture: TexImageSource, keep: boolean) => {
+    if (!keep) {
+      upload(texture, picture);
+      return;
+    }
+    const known = kept.get(picture);
+    if (known) {
+      gl.bindTexture(gl.TEXTURE_2D, known);
+      return;
+    }
+    const fresh = gl.createTexture();
+    upload(fresh, picture);
+    if (fresh) kept.set(picture, fresh);
+  };
+
+  const release = () => {
+    kept.forEach((entry) => gl.deleteTexture(entry));
+    kept.clear();
+  };
+
+  /**
+   * Draws `picture` tilted into `out`, at `scale` pixels to each canvas unit.
+   * Returns where it goes. `keep` holds the picture on the GPU until `release`,
+   * for a picture that won't change while it's drawn again and again.
+   */
+  const render = (
+    picture: TexImageSource,
+    look: TiltLook,
+    requestedScale: number,
+    out: HTMLCanvasElement,
+    keep = false,
+  ) => {
     const corners = tiltCorners(look);
     const box = tiltBoxOf(corners);
     const scale = Math.min(requestedScale, maxSide / Math.max(box.width, box.height, 1));
@@ -203,14 +250,7 @@ const createRenderer = () => {
     gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
 
     gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, picture);
-    gl.generateMipmap(gl.TEXTURE_2D);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    bind(picture, keep);
 
     gl.uniform1i(at("uTex"), 0);
     gl.uniform2f(at("uSize"), look.width, look.height);
@@ -228,7 +268,7 @@ const createRenderer = () => {
     return box;
   };
 
-  return { canvas, render };
+  return { canvas, render, release };
 };
 
 let renderer: ReturnType<typeof createRenderer> | undefined;
@@ -250,5 +290,13 @@ const getRenderer = () => {
 
 export const isTiltSupported = () => !!getRenderer();
 
-export const renderTilt = (picture: TexImageSource, look: TiltLook, scale: number, out: HTMLCanvasElement) =>
-  getRenderer()?.render(picture, look, scale, out) ?? null;
+export const renderTilt = (
+  picture: TexImageSource,
+  look: TiltLook,
+  scale: number,
+  out: HTMLCanvasElement,
+  keep = false,
+) => getRenderer()?.render(picture, look, scale, out, keep) ?? null;
+
+/** Lets go of the pictures an animation kept on the GPU. */
+export const releaseTiltPictures = () => renderer?.release();

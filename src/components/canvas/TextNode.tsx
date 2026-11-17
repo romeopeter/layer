@@ -4,6 +4,24 @@ import { Text as KText, Group } from "react-konva";
 import type { TextElement } from "../../types";
 import { useEditor } from "../../store/editor";
 import { sameNodeProps } from "./nodeProps";
+import { registerObjectPainter } from "@/lib/motion/pose";
+
+/**
+ * The first `share` of a text's letters, broken where the whole text breaks, so
+ * words don't jump between lines as they're typed.
+ */
+const typedSoFar = (node: Konva.Text, full: string, share: number) => {
+  node.text(full);
+  const lines = node.textArr.map((line) => line.text);
+  let left = Math.round(lines.reduce((sum, line) => sum + line.length, 0) * share);
+  const shown: string[] = [];
+  for (const line of lines) {
+    if (left <= 0) break;
+    shown.push(line.slice(0, left));
+    left -= line.length;
+  }
+  return shown.join("\n");
+};
 
 interface Props {
   el: TextElement;
@@ -20,6 +38,7 @@ const TextNodeBody = ({ el, onSelect }: Props) => {
   const setEditingId = useEditor((s) => s.setEditingId);
   const editing = useEditor((s) => s.editingId === el.id);
   const textRef = useRef<Konva.Text>(null);
+  const fontsVersion = useEditor((s) => s.fontsVersion);
   const sp = el.shadow?.enabled
     ? {
         shadowColor: el.shadow.color,
@@ -30,8 +49,34 @@ const TextNodeBody = ({ el, onSelect }: Props) => {
       }
     : {};
 
+  // A font that arrived after the text was laid out changes where its lines break.
+  useEffect(() => {
+    const node = textRef.current;
+    if (!node || fontsVersion === 0) return;
+    node._setTextData();
+    node.getLayer()?.batchDraw();
+  }, [fontsVersion]);
+
+  // Typing it out during an animation shows the letters so far; at rest, all of them.
+  const fullText = useRef(el.text);
+  useEffect(() => {
+    fullText.current = el.text;
+  });
+  useEffect(
+    () =>
+      registerObjectPainter(el.id, (pose) => {
+        const node = textRef.current;
+        if (!node) return;
+        const full = fullText.current;
+        node.text(pose && pose.reveal < 1 ? typedSoFar(node, full, pose.reveal) : full);
+      }),
+    [el.id],
+  );
+
   // The box is as tall as its wrapped lines, so keep the stored height honest.
   useEffect(() => {
+    // Mid-animation it may be showing only some of its letters.
+    if (useEditor.getState().previewing) return;
     const height = textRef.current?.height();
     if (height !== undefined && Math.abs(height - el.height) > 0.5) {
       measure(el.id, height);

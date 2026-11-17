@@ -1,6 +1,8 @@
 import { useEffect, useRef, type RefObject } from "react";
 import type Konva from "konva";
 import { useEditor } from "@/store/editor";
+import { activeKit } from "@/lib/brand/kits";
+import { brandText } from "@/lib/brand/apply";
 import { gestureFields, toolCategory, type Gesture } from "@/lib/markTools";
 import { SNAP_THRESHOLD_PX, snapPoint, type SnapCandidates } from "@/lib/snapping";
 import type { MarkTool, ShapeElement, ShapeKind } from "@/types";
@@ -73,8 +75,11 @@ const commit = (tool: MarkTool, gesture: Gesture) => {
     const width = gesture.isClick
       ? DEFAULT_TEXT_WIDTH
       : Math.abs(gesture.current[0] - gesture.start[0]);
+    const kit = activeKit(editor);
     const id = editor.addText("body", {
       ...NEW_TEXT,
+      // In the active brand's body style, as Apply brand would set it.
+      ...(kit ? brandText(kit, "body") : {}),
       x: gesture.isClick
         ? gesture.start[0]
         : Math.min(gesture.start[0], gesture.current[0]),

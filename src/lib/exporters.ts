@@ -3,6 +3,7 @@ import { BACKGROUND_LAYER_NAME, getStage } from "../components/canvas/stageRef";
 import { useEditor } from "../store/editor";
 import { saveExport, saveProject } from "./host";
 import { openLayerFile } from "./importers";
+import { packProject } from "./projectFile";
 import { prepareExportTiles } from "./export/prepareExportTiles";
 import { prepareExportBackdrop } from "./export/prepareExportBackdrop";
 import { GRID_LAYER_NAME } from "../components/canvas/GridOverlay";
@@ -11,6 +12,7 @@ import { MARK_DRAFT_LAYER_NAME } from "../components/canvas/MarkDraft";
 import { MARK_HANDLES_LAYER_NAME } from "../components/canvas/MarkHandles";
 import { CROP_LAYER_NAME } from "../components/canvas/CropOverlay";
 import { LAYOUT_SLOTS_LAYER_NAME } from "../components/canvas/LayoutOverlay";
+import { ZOOM_SPOTS_LAYER_NAME } from "../components/canvas/ZoomSpotsLayer";
 
 const dataURLtoBlob = (dataUrl: string): Blob => {
   const [meta, b64] = dataUrl.split(",");
@@ -28,7 +30,7 @@ const dataURLtoBlob = (dataUrl: string): Blob => {
  * but must never reach the output — any future viewport aid (rulers, safe-area
  * guides) belongs in this list too.
  */
-const withOverlaysHidden = async <T,>(
+export const withOverlaysHidden = async <T,>(
   stage: Konva.Stage,
   options: { withoutBackground?: boolean },
   fn: () => Promise<T>,
@@ -42,6 +44,7 @@ const withOverlaysHidden = async <T,>(
     ...stage.find(`.${MARK_HANDLES_LAYER_NAME}`),
     ...stage.find(`.${CROP_LAYER_NAME}`),
     ...stage.find(`.${LAYOUT_SLOTS_LAYER_NAME}`),
+    ...stage.find(`.${ZOOM_SPOTS_LAYER_NAME}`),
   ];
   const visible = overlays.map((node) => node.visible());
   overlays.forEach((node) => node.visible(false));
@@ -59,6 +62,23 @@ export interface ExportOptions {
   withoutBackground?: boolean;
 }
 
+/**
+ * What to capture: the canvas at its own size, `pixelRatio` pixels to each of its
+ * pixels. The stage is scaled to fit the screen, which this undoes.
+ */
+export const captureBox = (stage: Konva.Stage, pixelRatio: number) => {
+  const { canvas } = useEditor.getState();
+  const scaleX = stage.scaleX();
+  const scaleY = stage.scaleY();
+  return {
+    pixelRatio: pixelRatio / scaleX,
+    x: 0,
+    y: 0,
+    width: canvas.width * scaleX,
+    height: canvas.height * scaleY,
+  };
+};
+
 export const renderCanvasDataURL = (
   format: "png" | "jpg" | "webp" = "png",
   pixelRatio = 2,
@@ -68,6 +88,8 @@ export const renderCanvasDataURL = (
   if (!stage) return Promise.resolve(null);
 
   return withOverlaysHidden(stage, options, async () => {
+    // Text in a font still loading would export in a stand-in.
+    await document.fonts.ready;
     // The stage is scaled to fit, and the pixelRatio below compensates for that,
     // so the background pattern is rasterized at `pixelRatio` device pixels per
     // canvas unit regardless of the current zoom.
@@ -75,20 +97,10 @@ export const renderCanvasDataURL = (
     const cleanupBackdrop = await prepareExportBackdrop(stage, pixelRatio);
 
     try {
-      // Stage is currently scaled to fit; export uses the canvas's intrinsic resolution
-      const { canvas } = useEditor.getState();
-      const scaleX = stage.scaleX();
-      const scaleY = stage.scaleY();
-
-      // Compensate: scale up the export so the result is at intrinsic resolution × pixelRatio
       return stage.toDataURL({
-        pixelRatio: pixelRatio / scaleX,
+        ...captureBox(stage, pixelRatio),
         mimeType: format === "jpg" ? "image/jpeg" : `image/${format}`,
         quality: 0.95,
-        x: 0,
-        y: 0,
-        width: canvas.width * scaleX,
-        height: canvas.height * scaleY,
       });
     } finally {
       cleanupPatternTiles?.();
@@ -127,10 +139,7 @@ export const copyCanvasToClipboard = async (options: ExportOptions = {}) => {
 
 export const downloadProject = async () => {
   const project = useEditor.getState().toProject();
-  await saveProject(
-    JSON.stringify(project, null, 2),
-    `layer-project-${Date.now()}.layer`,
-  );
+  await saveProject(await packProject(project), `layer-project-${Date.now()}.layer`);
 };
 
 export const openProjectFile = async () => {

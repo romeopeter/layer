@@ -18,6 +18,12 @@ import { BACKDROP_FINISH, BACKDROP_MAIN } from "./shader";
 /** What to put the effects on: an abstract background, or a picture of another type. */
 export type BackgroundSource = { look: BackdropLook } | { canvas: HTMLCanvasElement };
 
+/** A moment of a live background: how far round its loop (0 to 1), and which frame, for grain. */
+export interface LiveMoment {
+  phase: number;
+  frame: number;
+}
+
 /** The largest side drawn, whatever the export scale asks for. */
 const MAX_SIDE = 8192;
 /** Blurs work at a size where they need at most this many pixels of radius. */
@@ -46,21 +52,45 @@ interface Target {
   height: number;
 }
 
+/** A live background's drift: a small circle, back where it started at phase 0 and 1. */
+const circle = (phase: number, radius: number, offset = 0) => {
+  const turn = (phase + offset) * Math.PI * 2;
+  const start = offset * Math.PI * 2;
+  return [radius * (Math.cos(turn) - Math.cos(start)), radius * (Math.sin(turn) - Math.sin(start))];
+};
+
+/** How far a live background's shapes wander, in units of the shorter side, and its noise drifts. */
+const DRIFT = 0.07;
+const NOISE_DRIFT = 1.4;
+
 /**
  * Where the shapes go, from the seed. Positions are in units of the canvas's
  * shorter side, measured from its middle, so they reach the edges of any shape.
+ * A live background passes its phase (0 to 1), which moves everything round a
+ * loop: at phase 0 it's the background as it rests.
  */
-const placesOf = (style: BackdropStyle, seed: number, half: [number, number]) => {
+const placesOf = (style: BackdropStyle, seed: number, half: [number, number], loop = 0) => {
+  const phase = loop - Math.floor(loop);
   const random = randomFrom(seed);
   const places = new Float32Array(64);
   const set = (i: number, x: number, y: number, z: number, w: number) => places.set([x, y, z, w], i * 4);
   const spread = (side: number) => (random() * 2 - 1) * side * 0.9;
   const between = (from: number, to: number) => from + random() * (to - from);
+  /** Noise looked up further along, in a circle, so it flows and comes back. */
+  const noise = (x: number, y: number, offset = 0) => {
+    const [dx, dy] = circle(phase, NOISE_DRIFT, offset);
+    return [x + dx, y + dy] as const;
+  };
+  /** A wave's phase, travelling one whole turn each loop, one way or the other. */
+  const travel = (angle: number, way: number) => angle + way * phase * Math.PI * 2;
 
   const softPatches = () => {
     const colors = [1, 2, 3, 1, 2];
-    colors.forEach((color, i) => set(i, spread(half[0]), spread(half[1]), 0.3 + random() * 0.45, color));
-    set(6, random() * 40, random() * 40, 0, 0);
+    colors.forEach((color, i) => {
+      const [dx, dy] = circle(phase, DRIFT, i / colors.length);
+      set(i, spread(half[0]) + dx, spread(half[1]) + dy, 0.3 + random() * 0.45, color);
+    });
+    set(6, ...noise(random() * 40, random() * 40), 0, 0);
   };
 
   if (style === "soft") {
@@ -68,13 +98,13 @@ const placesOf = (style: BackdropStyle, seed: number, half: [number, number]) =>
   } else if (style === "waves") {
     for (let i = 0; i < 4; i++) {
       const offset = half[1] * (-0.55 + i * 0.38) + (random() - 0.5) * 0.08;
-      set(i, offset, 0.05 + random() * 0.1, 1.6 + random() * 3, random() * Math.PI * 2);
+      set(i, offset, 0.05 + random() * 0.1, 1.6 + random() * 3, travel(random() * Math.PI * 2, i % 2 ? -1 : 1));
     }
-    set(4, (random() - 0.5) * 1.2, random() * 40, random() * 40, 0);
+    set(4, (random() - 0.5) * 1.2, ...noise(random() * 40, random() * 40), 0);
   } else if (style === "streaks") {
     // Always on a diagonal, one way or the other.
     const angle = (0.45 + random() * 0.5) * (random() < 0.5 ? 1 : -1);
-    set(0, angle, random() * 40, random() * 40, random() * Math.PI * 2);
+    set(0, angle, ...noise(random() * 40, random() * 40), travel(random() * Math.PI * 2, 1));
     set(1, (random() - 0.5) * 0.4, 0, 0, 0);
   } else if (style === "glass") {
     softPatches();
@@ -90,24 +120,34 @@ const placesOf = (style: BackdropStyle, seed: number, half: [number, number]) =>
     set(14, between(-2.6, -0.6), 0, 0, 0);
   } else if (style === "aurora") {
     for (let i = 0; i < 3; i++) {
-      set(i, between(-0.12, 0.12) - i * 0.06, between(0.06, 0.14), between(0.12, 0.26), random() * 40);
+      const sway = 1.2 * (Math.sin((phase + i / 3) * Math.PI * 2) - Math.sin((i / 3) * Math.PI * 2));
+      set(i, between(-0.12, 0.12) - i * 0.06, between(0.06, 0.14), between(0.12, 0.26), random() * 40 + sway);
     }
   } else if (style === "silk") {
     const along = random() * Math.PI;
     const wave = (i: number, angle: number, frequency: number, height: number) =>
-      set(i, Math.cos(angle) * frequency, Math.sin(angle) * frequency, random() * Math.PI * 2, height / frequency);
+      set(
+        i,
+        Math.cos(angle) * frequency,
+        Math.sin(angle) * frequency,
+        travel(random() * Math.PI * 2, i % 2 ? -1 : 1),
+        height / frequency,
+      );
     wave(0, along, between(4.5, 6), 1.0);
     wave(1, along + between(0.2, 0.4), between(8, 11), 0.55);
     wave(2, along + between(1.1, 1.5), between(2, 3), 0.45);
     wave(3, along - between(0.1, 0.3), between(13, 16), 0.25);
-    set(4, random() * 6, random() * 6, between(-2.5, -0.6), between(-0.4, 0.4));
+    set(4, ...noise(random() * 6, random() * 6), between(-2.5, -0.6), between(-0.4, 0.4));
   } else if (style === "marble") {
-    set(0, random() * 40, random() * 40, random() * 40, random() * 40);
-    set(1, random() * 40, random() * 40, random() * 40, random() * 40);
+    set(0, ...noise(random() * 40, random() * 40), ...noise(random() * 40, random() * 40, 0.25));
+    set(1, ...noise(random() * 40, random() * 40, 0.5), ...noise(random() * 40, random() * 40, 0.75));
     set(2, 0, between(0.8, 1.2), between(1.1, 1.6), 0);
   } else {
     const colors = [1, 2, 3, 2];
-    colors.forEach((color, i) => set(i, spread(half[0]), spread(half[1]), 0.22 + random() * 0.3, color));
+    colors.forEach((color, i) => {
+      const [dx, dy] = circle(phase, DRIFT, i / colors.length);
+      set(i, spread(half[0]) + dx, spread(half[1]) + dy, 0.22 + random() * 0.3, color);
+    });
   }
   return places;
 };
@@ -218,6 +258,7 @@ const createRenderer = () => {
     size: { width: number; height: number },
     requestedScale: number,
     out: HTMLCanvasElement,
+    live: LiveMoment | null,
   ) => {
     const scale = Math.min(requestedScale, maxSide / Math.max(size.width, size.height));
     const width = Math.max(1, Math.round(size.width * scale));
@@ -233,7 +274,7 @@ const createRenderer = () => {
         gl.uniform1f(u("uPixel"), 1 / (shorter * scale));
         gl.uniform1i(u("uStyle"), STYLE_CODE[look.style]);
         gl.uniform3fv(u("uColors"), look.colors.flatMap(hexToLinear));
-        gl.uniform4fv(u("uP"), placesOf(look.style, look.seed, half));
+        gl.uniform4fv(u("uP"), placesOf(look.style, look.seed, half, live?.phase ?? 0));
       });
     } else {
       // Brought to the exact size first, since the caller's rounding may differ.
@@ -288,6 +329,8 @@ const createRenderer = () => {
       gl.uniform1f(u("uFrost"), effects.frost);
       gl.uniform1f(u("uGrain"), effects.grain);
       gl.uniform1f(u("uVignette"), effects.vignette);
+      // Grain that changes every frame, like film; at rest, the same grain every time.
+      gl.uniform1f(u("uGrainSeed"), live ? (live.frame % 997) * 13 : 0);
     });
 
     out.width = width;
@@ -318,17 +361,21 @@ const getRenderer = () => {
 
 export const isBackdropSupported = () => !!getRenderer();
 
-/** Draws a background with its effects into `out`, at `scale` pixels to each canvas pixel. */
+/**
+ * Draws a background with its effects into `out`, at `scale` pixels to each canvas
+ * pixel. A live background passes the moment to draw.
+ */
 export const renderBackground = (
   source: BackgroundSource,
   effects: BackgroundEffects,
   size: { width: number; height: number },
   scale: number,
   out: HTMLCanvasElement,
+  live: LiveMoment | null = null,
 ) => {
   const active = getRenderer();
   if (!active) return false;
-  active.render(source, effects, size, scale, out);
+  active.render(source, effects, size, scale, out, live);
   return true;
 };
 

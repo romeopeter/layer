@@ -10,7 +10,9 @@ import { WatermarkPanel } from "./WatermarkPanel";
 import { ImagesPanel } from "./ImagesPanel";
 import { LayoutPanel } from "./LayoutPanel";
 import { TemplatesPanel } from "./TemplatesPanel";
-import { AiPanel, BrandsPanel, MotionPanel, CustomizePanel } from "./StubPanels";
+import { CustomizePanel } from "./CustomizePanel";
+import { AnimatePanel } from "./AnimatePanel";
+import { BrandKitPanel } from "./BrandKitPanel";
 import { PanelTitle } from "./primitives";
 
 interface Props {
@@ -20,8 +22,6 @@ interface Props {
 
 const View = ({ activeTool, onOpenCustomizeModal }: Props) => {
   switch (activeTool) {
-    case "ai":
-      return <AiPanel />;
     case "templates":
       return <TemplatesPanel />;
     case "images":
@@ -41,9 +41,9 @@ const View = ({ activeTool, onOpenCustomizeModal }: Props) => {
     case "watermark":
       return <WatermarkPanel />;
     case "brands":
-      return <BrandsPanel />;
+      return <BrandKitPanel />;
     case "motion":
-      return <MotionPanel />;
+      return <AnimatePanel />;
     case "customize":
       return <CustomizePanel onOpenModal={onOpenCustomizeModal} />;
     default:

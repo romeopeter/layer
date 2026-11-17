@@ -5,7 +5,6 @@ import type { WatermarkSettings } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { fileToDataURL } from "@/lib/importers";
 import { WATERMARK_OPACITY_MIN, WATERMARK_PLACES, WATERMARK_SIZE } from "@/lib/watermark";
 import {
   ColorRow,
@@ -17,6 +16,8 @@ import {
   SwitchRow,
 } from "./primitives";
 import { PlaceGrid } from "./PlaceGrid";
+import { IMAGE_FILE_TYPES, readImageFile } from "@/lib/importers";
+import { showError } from "@/lib/host";
 
 type Own = WatermarkSettings["own"];
 
@@ -34,7 +35,12 @@ export const WatermarkPanel = () => {
   const onLogo = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = "";
-    if (file) setOwn({ kind: "logo", logoSrc: await fileToDataURL(file) });
+    if (!file) return;
+    try {
+      setOwn({ kind: "logo", logoSrc: await readImageFile(file) });
+    } catch (error) {
+      await showError(error instanceof Error ? error.message : "Layer couldn't read that picture.");
+    }
   };
 
   return (
@@ -127,7 +133,7 @@ export const WatermarkPanel = () => {
             <input
               ref={fileRef}
               type="file"
-              accept="image/png,image/svg+xml,image/webp,image/jpeg"
+              accept={IMAGE_FILE_TYPES}
               className="hidden"
               onChange={onLogo}
               aria-label="Upload a logo for the watermark"

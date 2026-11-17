@@ -1,11 +1,12 @@
-import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { Image as KImage, Rect } from "react-konva";
 import type Konva from "konva";
 import useImage from "use-image";
 import type { BackgroundState } from "@/types";
 import { useEditor } from "@/store/editor";
-import { isBackdropSupported, renderBackground } from "@/lib/backdrops/renderer";
+import { isBackdropSupported, renderBackground, type LiveMoment } from "@/lib/backdrops/renderer";
 import { drawBackgroundSource } from "@/lib/background/drawSource";
+import { registerBackgroundPainter } from "@/lib/motion/pose";
 
 /** Found by name at export, which draws it again at the export's own scale. */
 export const BACKGROUND_FILL_NAME = "background-fill";
@@ -13,10 +14,13 @@ export const BACKGROUND_FILL_NAME = "background-fill";
 /** The node attribute holding how to draw this background at any scale, for export. */
 export const DRAW_AT_ATTR = "drawAt";
 
-export type DrawAt = (scale: number, out: HTMLCanvasElement) => Promise<boolean>;
+/** Draws the background at any scale; a live background also takes the moment to draw. */
+export type DrawAt = (scale: number, out: HTMLCanvasElement, live?: LiveMoment | null) => Promise<boolean>;
 
 /** The preview never needs more pixels than a large screen can show. */
 const PREVIEW_SIDE = 2048;
+/** While playing, a live background is drawn every frame, so smaller, for speed. */
+const LIVE_PREVIEW_SIDE = 1024;
 
 const previewScaleOf = (width: number, height: number) =>
   Math.min(1, PREVIEW_SIDE / Math.max(width, height));
@@ -40,16 +44,44 @@ export const BackgroundFill = ({ bg, width, height }: Props) => {
   const customPairs = useEditor((s) => s.customPatternPairs);
 
   const drawAt = useCallback<DrawAt>(
-    async (scale, out) => {
+    async (scale, out, live = null) => {
       const size = { width, height };
       const source =
         bg.mode === "abstract"
           ? { look: bg.backdrop }
-          : { canvas: await drawBackgroundSource(bg, size, scale, { image, customPairs }) };
-      return renderBackground(source, bg.effects, size, scale, out);
+          : { canvas: await drawBackgroundSource(bg, size, scale, { image, customPairs, phase: live?.phase }) };
+      return renderBackground(source, bg.effects, size, scale, out, live);
     },
     [bg, width, height, image, customPairs],
   );
+
+  // A live background, drawn again for each moment of an animation into a canvas
+  // of its own; at rest, the preview above shows again.
+  const live = useMemo(() => document.createElement("canvas"), []);
+  const latest = useRef({ drawAt, width, height });
+  useEffect(() => {
+    latest.current = { drawAt, width, height };
+  });
+  useEffect(() => {
+    let drawing = 0;
+    return registerBackgroundPainter(async (phase, options) => {
+      const node = ref.current;
+      if (!node) return;
+      const turn = ++drawing;
+      if (phase === null) {
+        node.image(picture);
+        node.getLayer()?.batchDraw();
+        return;
+      }
+      const { drawAt: draw, width: w, height: h } = latest.current;
+      const scale = options.preview ? Math.min(1, LIVE_PREVIEW_SIDE / Math.max(w, h)) : options.scale;
+      const drawn = await draw(scale, live, { phase, frame: options.frame });
+      // A later moment may have been asked for meanwhile; only the latest shows.
+      if (!drawn || turn !== drawing) return;
+      node.image(live);
+      node.getLayer()?.batchDraw();
+    });
+  }, [live, picture]);
 
   useLayoutEffect(() => {
     const node = ref.current;

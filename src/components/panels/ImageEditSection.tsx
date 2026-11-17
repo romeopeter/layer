@@ -45,6 +45,7 @@ import {
   SectionLabel,
 } from "./primitives";
 import { choiceClass } from "./choice";
+import { IMAGE_FILE_TYPES } from "@/lib/importers";
 
 /* ------------------------------------------------------------------------------------------- */
 
@@ -214,7 +215,7 @@ const FixTab = ({ image }: { image: ImageElement }) => {
               choiceClass(false),
             )}
           >
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-p-50/[0.04] text-text">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-p-200/[0.06] text-text">
               {fix.icon}
             </span>
             <span className="flex min-w-0 flex-col">
@@ -339,7 +340,7 @@ const DoubleExposure = ({
       <input
         ref={fileRef}
         type="file"
-        accept="image/png,image/jpeg,image/webp,image/svg+xml"
+        accept={IMAGE_FILE_TYPES}
         className="hidden"
         onChange={onPick}
         aria-label="Add second image"

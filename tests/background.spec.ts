@@ -77,7 +77,7 @@ test.describe("background effects", () => {
     await openBackground(page, "Solid");
     await page.evaluate(`S.getState().setEffects({ opacity: 0.4 })`);
     await page.waitForTimeout(100);
-    expect(await page.evaluate(`ST().getLayers()[0].getChildren()[0].opacity()`)).toBeCloseTo(0.4);
+    expect(await page.evaluate(`ST().findOne(".motion-background").getChildren()[0].opacity()`)).toBeCloseTo(0.4);
   });
 
   test("export draws them again at full size", async ({ page }) => {

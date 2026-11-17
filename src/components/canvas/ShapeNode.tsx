@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef } from "react";
 import Konva from "konva";
 import { Circle, Group, Rect, Ellipse, Text as KText, Line, Path } from "react-konva";
 import type { ShapeElement } from "../../types";
@@ -10,6 +10,23 @@ import { connectorGeometry } from "../../lib/connectors";
 import { effectProps } from "../../lib/markTools";
 import { isPathShape, shapePath } from "../../lib/shapePaths";
 import { sameNodeProps } from "./nodeProps";
+import { getStage } from "./stageRef";
+import { registerObjectPainter } from "@/lib/motion/pose";
+
+/** Konva names of a line's stroke, which an animation draws, and its heads, which wait for it. */
+const DRAW_STROKE = "draw-stroke";
+const DRAW_HEAD = "draw-head";
+
+const strokeLength = (stroke: Konva.Shape) => {
+  if (stroke instanceof Konva.Path) return stroke.getLength();
+  if (!(stroke instanceof Konva.Line)) return 0;
+  const points = stroke.points();
+  let length = 0;
+  for (let i = 2; i < points.length; i += 2) {
+    length += Math.hypot(points[i] - points[i - 2], points[i + 1] - points[i - 1]);
+  }
+  return length;
+};
 
 interface Props {
   el: ShapeElement;
@@ -97,6 +114,31 @@ const ShapeNodeBody = ({ el, onSelect }: Props) => {
   const effect = effectProps(el);
 
   const dash = el.dashed ? [el.strokeWidth * 2, el.strokeWidth * 2] : undefined;
+
+  // Drawing itself during an animation: a dash as long as the line, slid along it.
+  const restDash = useRef(dash);
+  useEffect(() => {
+    restDash.current = dash;
+  });
+  useEffect(
+    () =>
+      registerObjectPainter(el.id, (pose) => {
+        const root = getStage()?.findOne(`#${el.id}`);
+        if (!root || !(root instanceof Konva.Container)) return;
+        const drawing = !!pose && pose.reveal < 1;
+        root.find<Konva.Shape>(`.${DRAW_STROKE}`).forEach((stroke) => {
+          if (!pose || !drawing) {
+            stroke.setAttrs({ dash: restDash.current, dashOffset: 0 });
+            return;
+          }
+          // A little over, so a round cap doesn't leave a dot at the far end.
+          const length = strokeLength(stroke) + stroke.strokeWidth();
+          stroke.setAttrs({ dash: [length, length], dashOffset: length * (1 - pose.reveal) });
+        });
+        root.find(`.${DRAW_HEAD}`).forEach((head) => head.visible(!pose || pose.reveal >= 0.98));
+      }),
+    [el.id],
+  );
   const borderStroke = el.border?.enabled ? el.border.color : el.stroke;
   const borderWidth = el.border?.enabled ? el.border.width : el.strokeWidth;
 
@@ -162,6 +204,7 @@ const ShapeNodeBody = ({ el, onSelect }: Props) => {
     return (
       <Group {...common}>
         <Path
+          name={DRAW_STROKE}
           data={shaft}
           stroke={el.stroke}
           strokeWidth={el.strokeWidth}
@@ -173,6 +216,7 @@ const ShapeNodeBody = ({ el, onSelect }: Props) => {
         {heads.map((head) => (
           <Path
             key={head.path}
+            name={DRAW_HEAD}
             data={head.path}
             fill={head.filled ? el.stroke : undefined}
             stroke={el.stroke}
@@ -272,6 +316,7 @@ const ShapeNodeBody = ({ el, onSelect }: Props) => {
             It blends within this layer, which holds images and other marks, so
             over the background (its own layer) it's a plain translucent stroke. */}
         <Line
+          name={DRAW_STROKE}
           points={strokePoints ?? []}
           stroke={el.stroke}
           strokeWidth={el.strokeWidth}
@@ -289,6 +334,7 @@ const ShapeNodeBody = ({ el, onSelect }: Props) => {
     return (
       <Group {...common}>
         <Line
+          name={DRAW_STROKE}
           points={strokePoints ?? []}
           stroke={el.stroke}
           strokeWidth={el.strokeWidth}

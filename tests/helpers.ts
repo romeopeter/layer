@@ -157,14 +157,38 @@ export const fakeShell = (page: Page, handlers: string) =>
   page.addInitScript(`
     window.__TAURI__ = {};
     window.CALLS = [];
+    window.CALLBACKS = {};
+    window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
+    let nextCallback = 1;
     window.__TAURI_INTERNALS__ = {
-      transformCallback: () => 0,
+      // Kept, so a test can deliver an event the way the shell would.
+      transformCallback: (callback) => {
+        const id = nextCallback++;
+        window.CALLBACKS[id] = callback;
+        return id;
+      },
       invoke: async (command, args) => {
         window.CALLS.push([command, args]);
+        // Events, as the shell keeps them: a listener stops when it's told to.
+        if (command === "plugin:event|listen") return args.handler;
+        if (command === "plugin:event|unlisten") {
+          delete window.CALLBACKS[args.eventId];
+          return null;
+        }
         return (${handlers})(command, args);
       },
     };
   `);
+
+/** Delivers an event from the shell to the page's listeners for it, as the menu bar does. */
+export const shellEvent = (page: Page, event: string, payload: unknown) =>
+  page.evaluate(`(() => {
+    for (const [command, args] of CALLS) {
+      if (command === "plugin:event|listen" && args.event === ${JSON.stringify(event)}) {
+        CALLBACKS[args.handler]?.({ event: ${JSON.stringify(event)}, id: args.handler, payload: ${JSON.stringify(payload)} });
+      }
+    }
+  })()`);
 
 export const shellCalls = (page: Page, command: string): Promise<Record<string, unknown>[]> =>
   page.evaluate(`CALLS.filter((c) => c[0] === ${JSON.stringify(command)}).map((c) => c[1])`);

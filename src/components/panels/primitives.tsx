@@ -2,6 +2,9 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { Slider as ShSlider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
+import { useEditor } from "@/store/editor";
+import { activeKit } from "@/lib/brand/kits";
+import { choiceClass } from "./choice";
 
 export const PanelTitle = ({
   children,
@@ -146,7 +149,7 @@ export const LabeledSlider = ({
         {leftIcon}
         {label}
       </span>
-      <span className="rounded bg-p-50/[0.05] px-1.5 py-0.5 font-mono text-[10.5px] text-text">
+      <span className="rounded bg-p-200/[0.08] px-1.5 py-0.5 font-mono text-[10.5px] text-text">
         {value}
         {unit}
       </span>
@@ -161,6 +164,14 @@ export const LabeledSlider = ({
       onValueChange={([v]) => onChange?.(v)}
       onValueCommit={([v]) => onCommit?.(v)}
     />
+  </div>
+);
+
+/** A name over a set of choices, as a slider has over its track. */
+export const Field = ({ label, children }: { label: string; children: ReactNode }) => (
+  <div className="flex flex-col gap-1.5">
+    <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-p-200">{label}</span>
+    {children}
   </div>
 );
 
@@ -195,33 +206,64 @@ export const SwitchRow = ({
   </label>
 );
 
+/** The active brand kit's colours, for every colour picker to offer. */
+const useBrandColors = () => useEditor((s) => activeKit(s)?.colors);
+
 export const ColorRow = ({
   value,
   onChange,
   label,
+  brandSwatches = true,
 }: {
   value: string;
   onChange?: (v: string) => void;
   label?: ReactNode;
-}) => (
-  <div className="flex items-center gap-2 rounded-md border border-hairline bg-chrome/40 p-1.5">
-    <input
-      type="color"
-      aria-label={typeof label === "string" ? label : "Color"}
-      value={value}
-      onChange={(e) => onChange?.(e.target.value)}
-      className="h-5.5 w-5.5 cursor-pointer rounded border border-hairline bg-transparent p-0"
-    />
-    <div className="flex-1 font-mono text-[11px] text-text">
-      {value.toUpperCase()}
+  /** Offer the active brand kit's colours under the picker. Off inside the kit itself. */
+  brandSwatches?: boolean;
+}) => {
+  const brandColors = useBrandColors();
+  const swatches = brandSwatches && onChange && brandColors && brandColors.length > 0 ? brandColors : null;
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-2 rounded-md border border-hairline bg-chrome/40 p-1.5">
+        <input
+          type="color"
+          aria-label={typeof label === "string" ? label : "Color"}
+          value={value}
+          onChange={(e) => onChange?.(e.target.value)}
+          className="h-5.5 w-5.5 cursor-pointer rounded border border-hairline bg-transparent p-0"
+        />
+        <div className="flex-1 font-mono text-[11px] text-text">
+          {value.toUpperCase()}
+        </div>
+        {label && (
+          <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-text-faint">
+            {label}
+          </span>
+        )}
+      </div>
+      {swatches && (
+        <div role="group" aria-label="Brand colors" className="flex flex-wrap gap-1">
+          {swatches.map((color) => (
+            <button
+              key={color.id}
+              type="button"
+              title={color.name}
+              aria-label={`${color.name}, ${color.hex}`}
+              aria-pressed={value.toUpperCase() === color.hex}
+              onClick={() => onChange?.(color.hex)}
+              className={cn(
+                "h-5 w-5 cursor-pointer rounded-sm border transition-colors",
+                choiceClass(value.toUpperCase() === color.hex),
+              )}
+              style={{ background: color.hex }}
+            />
+          ))}
+        </div>
+      )}
     </div>
-    {label && (
-      <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-text-faint">
-        {label}
-      </span>
-    )}
-  </div>
-);
+  );
+};
 
 export const Linebreak = ({ className }: { className?: string }) => (
   <hr className={`border-border ${className}`} />
