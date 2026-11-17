@@ -33,6 +33,7 @@ import { importImageFile } from "@/lib/importers";
 import { arrangeLayout, slotAt } from "@/lib/layouts";
 import { getStage } from "@/components/canvas/stageRef";
 import { copyCanvasToClipboard, renderCanvasDataURL } from "@/lib/exporters";
+import { looksLikeImage } from "@/lib/heic";
 
 /* ------------------------------------------------------------------------------------------ */
 
@@ -198,7 +199,7 @@ export const App = () => {
     // The first image goes in the slot it was dropped on; the rest fill what's free.
     let slot = layoutSlotAt(e.clientX, e.clientY);
     for (const file of Array.from(e.dataTransfer.files)) {
-      if (!file.type.startsWith("image/")) continue;
+      if (!looksLikeImage(file)) continue;
       const chosen = slot;
       await importImageFile(file, (src, width, height) =>
         chosen === null

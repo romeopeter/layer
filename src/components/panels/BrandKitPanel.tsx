@@ -31,6 +31,8 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ColorRow, LabeledSlider, Linebreak, MutedMini, PanelDesc, PanelHelp, SectionLabel, SwitchRow } from "./primitives";
 import { choiceClass } from "./choice";
 import { GoogleFontPicker } from "./GoogleFontPicker";
+import { IMAGE_FILE_TYPES, readImageFile } from "@/lib/importers";
+import { looksLikeImage } from "@/lib/heic";
 
 /** Logos are kept whole in the kit's file, so very large ones are refused. */
 const MAX_LOGO_BYTES = 5 * 1024 * 1024;
@@ -271,7 +273,7 @@ const Logos = ({ kit }: { kit: BrandKit }) => {
   const onFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = [...(e.target.files ?? [])];
     e.target.value = "";
-    const pictures = files.filter((file) => file.type.startsWith("image/"));
+    const pictures = files.filter(looksLikeImage);
     const fitting = pictures.filter((file) => file.size <= MAX_LOGO_BYTES).slice(0, room);
     setProblem(
       fitting.length < pictures.length
@@ -280,13 +282,22 @@ const Logos = ({ kit }: { kit: BrandKit }) => {
           : `A kit holds up to ${MAX_BRAND_LOGOS} logos.`
         : null,
     );
-    const added: BrandLogo[] = await Promise.all(
-      fitting.map(async (file) => ({
-        id: brandId("bl"),
-        name: file.name.replace(/\.[^.]+$/, "").slice(0, 60) || "Logo",
-        src: await fileToDataURL(file),
-      })),
+    const read = await Promise.all(
+      fitting.map(async (file): Promise<BrandLogo | null> => {
+        try {
+          return {
+            id: brandId("bl"),
+            name: file.name.replace(/\.[^.]+$/, "").slice(0, 60) || "Logo",
+            src: await readImageFile(file),
+          };
+        } catch (error) {
+          // A HEIC photo this browser can't read, say: the rest still go in.
+          setProblem(error instanceof Error ? error.message : "Layer couldn't read that picture.");
+          return null;
+        }
+      }),
     );
+    const added = read.filter((logo): logo is BrandLogo => logo !== null);
     // Reading the files took a moment: add to the logos as they are now.
     const latest = useEditor.getState().brandKits.find((entry) => entry.id === kit.id)?.logos ?? kit.logos;
     if (added.length > 0) set({ logos: [...latest, ...added] });
@@ -311,7 +322,7 @@ const Logos = ({ kit }: { kit: BrandKit }) => {
         ref={fileRef}
         type="file"
         multiple
-        accept="image/png,image/svg+xml,image/webp,image/jpeg"
+        accept={IMAGE_FILE_TYPES}
         className="hidden"
         onChange={(e) => void onFiles(e)}
         aria-label="Upload logos to the brand kit"

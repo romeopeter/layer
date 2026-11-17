@@ -5,6 +5,7 @@ mod capture;
 mod clipboard;
 mod files;
 mod fonts;
+mod heic;
 mod menu;
 mod pixabay;
 mod saved;
@@ -45,6 +46,7 @@ pub fn run() {
             brand_assets::store_brand_asset,
             brand_assets::load_brand_asset,
             clipboard::read_clipboard_image,
+            heic::convert_heic,
             menu::sync_menu,
             updates::check_for_update,
             updates::install_update,

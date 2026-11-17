@@ -45,6 +45,7 @@ import {
   SectionLabel,
 } from "./primitives";
 import { choiceClass } from "./choice";
+import { IMAGE_FILE_TYPES } from "@/lib/importers";
 
 /* ------------------------------------------------------------------------------------------- */
 
@@ -339,7 +340,7 @@ const DoubleExposure = ({
       <input
         ref={fileRef}
         type="file"
-        accept="image/png,image/jpeg,image/webp,image/svg+xml"
+        accept={IMAGE_FILE_TYPES}
         className="hidden"
         onChange={onPick}
         aria-label="Add second image"

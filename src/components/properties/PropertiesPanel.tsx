@@ -11,7 +11,6 @@ import {
 import { useEditor } from "@/store/editor";
 import type { ImageElement, LayerElement, ShapeElement, TextElement } from "@/types";
 import { cn } from "@/lib/utils";
-import { fileToDataURL } from "@/lib/importers";
 import { layerName } from "@/lib/layerNames";
 import { layoutOf } from "@/lib/layouts";
 import { activeKit } from "@/lib/brand/kits";
@@ -30,6 +29,9 @@ import { ImageEditSection } from "@/components/panels/ImageEditSection";
 import { StyleControls } from "@/components/panels/mark/StyleControls";
 import { ElementMotionControls } from "@/components/panels/ElementMotionControls";
 import { SpacingControls, TextColorControls, TypographyControls } from "@/components/panels/TextControls";
+import { IMAGE_FILE_TYPES, readImageFile } from "@/lib/importers";
+import { showError } from "@/lib/host";
+import { looksLikeImage } from "@/lib/heic";
 
 /* ------------------------------------------------------------------------------------------- */
 
@@ -110,8 +112,14 @@ const ReplaceImage = ({ image }: { image: ImageElement }) => {
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = "";
-    if (!file?.type.startsWith("image/")) return;
-    const src = await fileToDataURL(file);
+    if (!file || !looksLikeImage(file)) return;
+    let src: string;
+    try {
+      src = await readImageFile(file);
+    } catch (error) {
+      await showError(error instanceof Error ? error.message : "Layer couldn't read that picture.");
+      return;
+    }
     const picture = new Image();
     picture.src = src;
     await picture.decode();
@@ -132,7 +140,7 @@ const ReplaceImage = ({ image }: { image: ImageElement }) => {
       <input
         ref={inputRef}
         type="file"
-        accept="image/png,image/jpeg,image/webp,image/svg+xml"
+        accept={IMAGE_FILE_TYPES}
         className="hidden"
         onChange={onFile}
         aria-label="Choose a picture to replace this one"

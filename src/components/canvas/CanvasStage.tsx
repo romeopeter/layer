@@ -39,6 +39,7 @@ import { FIXED_RATIO_SHAPES } from "@/lib/marks";
 import { BACKGROUND_CAMERA_NAME, CAMERA_GROUP_NAME } from "@/lib/motion/pose";
 import { playback } from "@/lib/motion/playback";
 import { ZOOM_SPOTS_LAYER_NAME, ZoomSpotsLayer } from "./ZoomSpotsLayer";
+import { IMAGE_FILE_TYPES } from "@/lib/importers";
 
 /* ------------------------------------------------------------------------ */
 
@@ -690,7 +691,7 @@ export const CanvasStage = () => {
           ref={layoutFileRef}
           type="file"
           multiple
-          accept="image/png,image/jpeg,image/webp,image/svg+xml"
+          accept={IMAGE_FILE_TYPES}
           className="hidden"
           onChange={onLayoutFiles}
           aria-label="Add images to layout slot"

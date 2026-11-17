@@ -124,6 +124,22 @@ export const syncMenu = async (state: { darkMode: boolean; grid: boolean }) => {
   await invoke("sync_menu", state).catch(() => {});
 };
 
+/**
+ * A HEIC or HEIF photo, decoded by the desktop shell, back as a JPEG (or a PNG when
+ * it has see-through parts). Throws the shell's message for the user if it can't.
+ */
+export const convertHeic = async (file: Blob): Promise<Blob> => {
+  const { invoke } = await invokeCore();
+  let bytes: ArrayBuffer;
+  try {
+    bytes = await invoke<ArrayBuffer>("convert_heic", new Uint8Array(await file.arrayBuffer()));
+  } catch (error) {
+    throw new Error(String(error), { cause: error });
+  }
+  const head = new Uint8Array(bytes, 0, 2);
+  return new Blob([bytes], { type: head[0] === 0x89 && head[1] === 0x50 ? "image/png" : "image/jpeg" });
+};
+
 /** Tells the user something went wrong, for where no panel can show it. */
 export const showError = async (message: string) => {
   if (!isTauri) return window.alert(message);

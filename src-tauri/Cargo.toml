@@ -23,6 +23,8 @@ thiserror = "2"
 tauri-plugin-clipboard-manager = "2"
 png = "0.18"
 tauri-plugin-updater = "2"
+zune-heic = "0.5"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 
 # Debug info for ~350 dependencies is most of `target/`. Our own code keeps it.
 [profile.dev.package."*"]

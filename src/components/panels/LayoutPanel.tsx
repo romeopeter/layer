@@ -21,6 +21,7 @@ import {
   SwitchRow,
 } from "./primitives";
 import { ChoiceTile } from "./ChoiceTile";
+import { IMAGE_FILE_TYPES } from "@/lib/importers";
 
 const PREVIEW = { width: 44, height: 32 };
 
@@ -148,7 +149,7 @@ export const LayoutPanel = () => {
                   ref={fileRef}
                   type="file"
                   multiple
-                  accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                  accept={IMAGE_FILE_TYPES}
                   className="hidden"
                   onChange={onPick}
                   aria-label="Add images to layout"
