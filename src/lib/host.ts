@@ -245,6 +245,44 @@ export const storePreferences = async (preferences: unknown) => {
   }
 };
 
+/**
+ * Keeps a brand kit's font or logo (a `data:` URL) as a file of its own, and gives
+ * back the name the desktop filed it under. Desktop only.
+ */
+export const storeBrandAsset = async (src: string): Promise<string> => {
+  const { invoke } = await invokeCore();
+  const blob = await (await fetch(src)).blob();
+  return invoke<string>("store_brand_asset", new Uint8Array(await blob.arrayBuffer()), {
+    headers: { "x-layer-asset-type": blob.type },
+  });
+};
+
+/** The types a kept asset's extension stands for. */
+const ASSET_TYPES: Record<string, string> = {
+  woff2: "font/woff2",
+  woff: "font/woff",
+  ttf: "font/ttf",
+  otf: "font/otf",
+  png: "image/png",
+  jpg: "image/jpeg",
+  webp: "image/webp",
+  gif: "image/gif",
+  svg: "image/svg+xml",
+};
+
+/** A kept font or logo, back as a `data:` URL. */
+export const loadBrandAsset = async (name: string): Promise<string> => {
+  const { invoke } = await invokeCore();
+  const bytes = await invoke<ArrayBuffer>("load_brand_asset", { name });
+  const type = ASSET_TYPES[name.split(".").pop() ?? ""] ?? "application/octet-stream";
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(new Blob([bytes], { type }));
+  });
+};
+
 /** Google Fonts come through the desktop shell, so the webview never talks to Google. */
 export const hasGoogleFonts = isTauri;
 

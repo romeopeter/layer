@@ -7,6 +7,7 @@ import { reducesMotion } from "@/lib/preferences";
 import { cn } from "@/lib/utils";
 import { normaliseSavedBackgrounds } from "@/lib/background/normalise";
 import { normaliseBrandKits } from "@/lib/brand/normalise";
+import { unpackBrandKits } from "@/lib/brand/storage";
 import { TopBar } from "@/components/TopBar";
 import { LeftRail } from "@/components/LeftRail";
 import { PanelHost } from "@/components/panels";
@@ -64,7 +65,9 @@ export const App = () => {
     void loadSavedBackgrounds().then((list) =>
       useEditor.getState().setSavedBackgrounds(normaliseSavedBackgrounds(list, DEFAULT_BACKGROUND)),
     );
-    void loadBrandKits().then((file) => useEditor.getState().setBrandKits(normaliseBrandKits(file)));
+    void loadBrandKits()
+      .then(unpackBrandKits)
+      .then((file) => useEditor.getState().setBrandKits(normaliseBrandKits(file)));
     void loadPreferences().then((file) => file && useEditor.getState().loadPreferences(file));
     void loadPatternColors().then((list) => useEditor.getState().setCustomPatternPairs(normaliseCustomPairs(list)));
   }, []);

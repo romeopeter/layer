@@ -38,7 +38,14 @@ import {
   type BackgroundLook,
   type ShuffleMode,
 } from "../lib/background/looks";
-import { storeBrandKits, storePatternColors, storePreferences, storeSavedBackgrounds } from "../lib/host";
+import {
+  hasBrandKitsFile,
+  storeBrandKits,
+  storePatternColors,
+  storePreferences,
+  storeSavedBackgrounds,
+} from "../lib/host";
+import { packBrandKits } from "../lib/brand/storage";
 import { DEFAULT_WATERMARK, marginOf, normaliseWatermark } from "../lib/watermark";
 import { brandId, kitFromDesign, nextKitName } from "../lib/brand/kits";
 import { brandPatch } from "../lib/brand/apply";
@@ -1071,13 +1078,23 @@ const BRAND_SAVE_DELAY = 400;
 let brandSave: ReturnType<typeof setTimeout> | undefined;
 
 /** Writes the kits to their file, once changes stop. Kits with fonts in them run to megabytes. */
+/**
+ * One write at a time. Writing the kits clears the font and logo files they no
+ * longer use, so an older write mustn't land after a newer one has kept its files.
+ */
+let brandWrites: Promise<void> = Promise.resolve();
+
 const saveBrandKitsSoon = () => {
   clearTimeout(brandSave);
   brandSave = setTimeout(() => {
-    const { brandKits, activeBrandKitId } = useEditor.getState();
-    void storeBrandKits({ version: 1, activeId: activeBrandKitId, kits: brandKits }).catch((error) =>
-      console.error(error),
-    );
+    brandWrites = brandWrites
+      .then(async () => {
+        const { brandKits, activeBrandKitId } = useEditor.getState();
+        const file = { version: 1 as const, activeId: activeBrandKitId, kits: brandKits };
+        // On the desktop, fonts and logos are kept as files beside the JSON.
+        await storeBrandKits(hasBrandKitsFile ? await packBrandKits(file) : file);
+      })
+      .catch((error) => console.error(error));
   }, BRAND_SAVE_DELAY);
 };
 

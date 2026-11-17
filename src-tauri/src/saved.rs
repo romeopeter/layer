@@ -146,9 +146,13 @@ pub async fn load_brand_kits(app: AppHandle) -> Result<String, String> {
     load(app, &BRAND_KITS).await
 }
 
+/// Writes the kits, then clears the fonts and logos they no longer use.
 #[tauri::command]
 pub async fn store_brand_kits(app: AppHandle, kits: String) -> Result<(), String> {
-    store(app, &BRAND_KITS, kits).await
+    store(app.clone(), &BRAND_KITS, kits.clone()).await?;
+    tauri::async_runtime::spawn_blocking(move || crate::brand_assets::prune_unused(&app, &kits))
+        .await
+        .map_err(|_| SaveError::NotWhole(BRAND_KITS.what).to_string())
 }
 
 #[tauri::command]

@@ -1,5 +1,6 @@
 use tauri::Manager;
 
+mod brand_assets;
 mod capture;
 mod files;
 mod fonts;
@@ -31,6 +32,8 @@ pub fn run() {
             saved::store_saved_backgrounds,
             saved::load_brand_kits,
             saved::store_brand_kits,
+            brand_assets::store_brand_asset,
+            brand_assets::load_brand_asset,
             saved::load_pattern_colors,
             saved::store_pattern_colors,
             saved::load_preferences,
