@@ -11,6 +11,8 @@ import {
   MIN_SPOT_ZOOM,
   backgroundCanMove,
   cameraMoves,
+  isPlayingGif,
+  lengthForGif,
   movesOnItsOwn,
 } from "@/lib/motion/normalise";
 import { Button } from "@/components/ui/button";
@@ -134,6 +136,26 @@ const LiveBackground = () => {
   );
 };
 
+/** A clip that holds whole loops of the design's GIF, so a video of it repeats smoothly. */
+const MatchGif = ({ length, onMatch }: { length: number; onMatch: (length: number) => void }) => {
+  const longest = useEditor((s) =>
+    s.elements.reduce((most, el) => (el.type === "image" && isPlayingGif(el) ? Math.max(most, el.gif?.duration ?? 0) : most), 0),
+  );
+  if (longest === 0) return null;
+  const matched = lengthForGif(longest);
+  const lasts = `${Math.round(longest / 100) / 10}s`;
+  return matched === length ? (
+    <PanelHelp className="my-0">The clip fits your GIF ({lasts}), so a video of it loops smoothly.</PanelHelp>
+  ) : (
+    <div className="flex flex-col gap-1.5">
+      <Button variant="ghost" size="block" className="cursor-pointer" onClick={() => onMatch(matched)}>
+        Match the GIF
+      </Button>
+      <PanelHelp className="my-0">Your GIF lasts {lasts}. Match it so the video loops smoothly.</PanelHelp>
+    </div>
+  );
+};
+
 /** Ways in that suit a whole design brought in piece by piece. */
 const ONE_BY_ONE: { id: EnterMove; label: string }[] = [
   { id: "fade", label: "Fade" },
@@ -242,6 +264,7 @@ export const AnimatePanel = () => {
           value={motion.length}
           onChange={(length) => setMotion({ length })}
         />
+        <MatchGif length={motion.length} onMatch={(length) => setMotion({ length })} />
         {motion.camera !== "still" && (
           <Field label="STRENGTH">
             <ToggleGroup

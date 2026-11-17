@@ -5,6 +5,7 @@ import { backgroundViewOf, cameraAt, viewTransform, WIDE } from "./camera";
 import { objectPoseAt, type ObjectPose } from "./objects";
 import { backgroundCanMove } from "./normalise";
 import { releaseTiltPictures } from "@/lib/tiltRender";
+import { resumeGifs, showGifsAt } from "@/lib/gif/player";
 
 /**
  * Puts the canvas in its pose at a moment of the animation, straight onto the
@@ -114,6 +115,8 @@ const posed = new Set<string>();
  */
 export const poseStage = async (stage: Konva.Stage, scene: MotionScene, t: number, options: PoseOptions) => {
   const { canvas, motion } = scene;
+  // GIFs first: a picture turned in 3D below is drawn from the frame they show.
+  showGifsAt(t * 1000);
   const view = cameraAt(motion, focusOf(scene), t);
   stage.findOne(`.${CAMERA_GROUP_NAME}`)?.setAttrs(viewTransform(view, canvas.width, canvas.height));
   stage
@@ -161,4 +164,5 @@ export const restStage = (stage: Konva.Stage, scene: MotionScene, options: PoseO
   posed.clear();
   void backgroundPainter?.(null, options);
   releaseTiltPictures();
+  resumeGifs();
 };

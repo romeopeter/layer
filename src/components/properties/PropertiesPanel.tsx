@@ -16,7 +16,7 @@ import { layoutOf } from "@/lib/layouts";
 import { activeKit } from "@/lib/brand/kits";
 import { DEVICES } from "@/lib/mockups";
 import { CAMERA_MOVES, labelOf } from "@/lib/motion/moves";
-import { hasMotion, movesOnItsOwn } from "@/lib/motion/normalise";
+import { hasMotion, isPlayingGif, movesOnItsOwn } from "@/lib/motion/normalise";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { CanvasSizePicker } from "@/components/CanvasSizePicker";
@@ -236,10 +236,12 @@ const ShapeProperties = ({ shape }: { shape: ShapeElement }) => {
 const animationSummary = (s: ReturnType<typeof useEditor.getState>) => {
   if (!hasMotion(s.motion, s.elements, s.background)) return "No motion";
   const objects = s.elements.filter(movesOnItsOwn).length;
+  const gifs = s.elements.filter(isPlayingGif).length;
   return [
     labelOf(CAMERA_MOVES, s.motion.camera),
     `${s.motion.length}s`,
     ...(objects > 0 ? [objects === 1 ? "1 object" : `${objects} objects`] : []),
+    ...(gifs > 0 ? [gifs === 1 ? "1 GIF" : `${gifs} GIFs`] : []),
   ].join(" · ");
 };
 

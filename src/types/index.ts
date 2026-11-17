@@ -118,6 +118,11 @@ export interface ImageElement extends BaseElement {
   naturalHeight?: number;
   /** Non-destructive edits. `src` stays the original. */
   edit?: ImageEdit;
+  /**
+   * An animated GIF: how many frames, and one loop's length in milliseconds.
+   * Measured when the picture loads, never edited. Absent for anything still.
+   */
+  gif?: { frames: number; duration: number };
 }
 
 /** Each is -100 to 100, where 0 changes nothing. */

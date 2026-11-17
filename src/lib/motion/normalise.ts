@@ -72,6 +72,19 @@ export const normaliseElementMotion = (value: unknown): ElementMotion | undefine
   return motion.enter === "none" && motion.keep === "none" ? undefined : motion;
 };
 
+/**
+ * The clip length that holds a whole number of a GIF's loops, at least the shortest
+ * clip, so the GIF and the clip end together and a video repeats without a jump.
+ */
+export const lengthForGif = (duration: number) => {
+  const loop = duration / 1000;
+  const times = Math.max(1, Math.ceil(MIN_LENGTH / loop - 1e-9));
+  return Math.min(MAX_LENGTH, Math.round(loop * times * 1000) / 1000);
+};
+
+/** An animated GIF that's showing: it plays, so the design moves. */
+export const isPlayingGif = (el: LayerElement) => el.type === "image" && !el.hidden && (el.gif?.frames ?? 0) > 1;
+
 export const movesOnItsOwn = (el: LayerElement) =>
   !el.hidden && !!el.motion && (el.motion.enter !== "none" || el.motion.keep !== "none");
 
@@ -85,4 +98,4 @@ export const cameraMoves = (motion: DesignMotion) => motion.camera !== "still" |
 export const hasMotion = (motion: DesignMotion, elements: LayerElement[], background: BackgroundState) =>
   cameraMoves(motion) ||
   (motion.liveBackground && backgroundCanMove(background)) ||
-  elements.some(movesOnItsOwn);
+  elements.some((el) => movesOnItsOwn(el) || isPlayingGif(el));

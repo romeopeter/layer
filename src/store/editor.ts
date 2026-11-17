@@ -280,6 +280,8 @@ interface EditorState {
   addLogo: (src: string, naturalWidth: number, naturalHeight: number) => string;
   /** Records a picture's size once loaded, for images saved without it. Not an edit. */
   setNaturalSize: (id: string, width: number, height: number) => void;
+  /** Records that a picture is an animated GIF, once it's decoded, or that it isn't. Not an edit. */
+  setGifInfo: (id: string, gif: ImageElement["gif"]) => void;
   setLayout: (id: LayoutId | null) => void;
   updateLayout: (patch: Partial<CanvasLayout>) => void;
   setSlotFocus: (index: number, focus: { x: number; y: number }) => void;
@@ -737,6 +739,9 @@ export const useEditor = create<EditorState>((set, get) => ({
     history.silently(() =>
       get().updateElement(id, { naturalWidth, naturalHeight } as Partial<LayerElement>),
     ),
+
+  setGifInfo: (id, gif) =>
+    history.silently(() => get().updateElement(id, { gif } as Partial<LayerElement>)),
 
   setLayout: (id) => {
     const { layout, elements } = get();

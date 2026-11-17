@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import type Konva from "konva";
 import { Image as KImage, Group, Rect } from "react-konva";
 import useImage from "use-image";
@@ -22,6 +22,7 @@ import { registerObjectPainter } from "@/lib/motion/pose";
 import { sameNodeProps } from "./nodeProps";
 import { BrowserBack, BrowserFront } from "./BrowserFrame";
 import { useEditedImage } from "./useEditedImage";
+import { useGifFrames } from "./useGifFrames";
 import { useAltHeld } from "./usePictureDrag";
 import { WindowBack, WindowFront } from "./WindowFrame";
 
@@ -73,6 +74,19 @@ const useTextureSource = (
     return part;
   }, [picture, edited, crop]);
 
+/** The part of a GIF's current frame that shows, drawn into `out`, as a tilt's texture. */
+const drawCropped = (frame: HTMLCanvasElement, crop: NonNullable<ReturnType<typeof visibleCrop>>, out: HTMLCanvasElement) => {
+  const width = Math.max(1, Math.round(crop.width * frame.width));
+  const height = Math.max(1, Math.round(crop.height * frame.height));
+  if (out.width !== width || out.height !== height) {
+    out.width = width;
+    out.height = height;
+  }
+  const g = out.getContext("2d");
+  g?.clearRect(0, 0, width, height);
+  g?.drawImage(frame, crop.x * frame.width, crop.y * frame.height, width, height, 0, 0, width, height);
+};
+
 /** The look of an image's tilt, turned further by an animation's pose. */
 const tiltLookOf = (el: ImageElement, turnX = 0, turnY = 0): TiltLook => {
   const tilt = parseImageTilt(el.transform);
@@ -113,7 +127,18 @@ const useTiltedPicture = (
     drawRef.current();
   }, [active, source, look, out]);
 
-  return active ? { canvas: out, box } : null;
+  // Drawn again from the same source, whose pixels changed: a GIF's next frame.
+  const sourceRef = useRef(source);
+  useEffect(() => {
+    sourceRef.current = source;
+  });
+  const redraw = useCallback(() => {
+    if (!active || !sourceRef.current) return;
+    renderTilt(sourceRef.current, look, TILT_SCALE, out);
+    drawRef.current();
+  }, [active, look, out]);
+
+  return active ? { canvas: out, box, redraw } : null;
 };
 
 const ImageNodeBody = ({ el, onSelect }: Props) => {
@@ -124,12 +149,20 @@ const ImageNodeBody = ({ el, onSelect }: Props) => {
   const pictureRef = useRef<Konva.Image>(null);
   const crop = useMemo(() => visibleCrop(el), [el.crop, el.layoutCrop]); // eslint-disable-line react-hooks/exhaustive-deps -- only these two feed it
   const inLayout = useEditor((s) => !!s.layout?.slots.some((slot) => slot.id === el.id));
-  const { picture, edited } = useEditedImage(
+  // An animated GIF shows its current frame; a new frame redraws it, tilted or not.
+  const onGifFrame = useRef(() => {});
+  const gif = useGifFrames(el, () => onGifFrame.current());
+  // Edits are for still pictures: a GIF plays as it is.
+  const { picture: still, edited } = useEditedImage(
     img,
-    el.edit,
+    gif ? undefined : el.edit,
     crop,
     () => pictureRef.current?.getLayer()?.batchDraw(),
   );
+  const picture = gif ? gif.canvas : still;
+  /** The size crops are measured against: a GIF's frames may be decoded smaller than the file. */
+  const sourceWidth = gif ? gif.canvas.width : (img?.naturalWidth ?? 0);
+  const sourceHeight = gif ? gif.canvas.height : (img?.naturalHeight ?? 0);
   const update = useEditor((s) => s.updateElement);
   const altHeld = useAltHeld();
 
@@ -142,15 +175,30 @@ const ImageNodeBody = ({ el, onSelect }: Props) => {
 
   const sp = shadowProps(el);
   const cropping = useEditor((s) => s.cropId === el.id);
-  const texture = useTextureSource(picture, edited, crop);
+  const stillTexture = useTextureSource(gif ? undefined : picture, edited, crop);
+  // A cropped GIF's texture is the visible part of each frame, drawn again as it changes.
+  const gifCrop = useMemo(() => document.createElement("canvas"), []);
+  const texture: TexImageSource | null = gif ? (crop ? gifCrop : gif.canvas) : stillTexture;
   const tilted = useTiltedPicture(el, texture, () => pictureRef.current?.getLayer()?.batchDraw());
+  useEffect(() => {
+    onGifFrame.current = () => {
+      if (gif && crop) drawCropped(gif.canvas, crop, gifCrop);
+      if (tilted) tilted.redraw();
+      else pictureRef.current?.getLayer()?.batchDraw();
+    };
+  });
+  // The first frame landed before the handler above was set, so it's drawn through it once.
+  const gifCanvas = gif?.canvas;
+  useEffect(() => {
+    if (gifCanvas) onGifFrame.current();
+  }, [gifCanvas]);
 
   // An animation can turn the picture in 3D, flat or not: drawn into a picture of its own.
   const posedRef = useRef<Konva.Image>(null);
   const posedCanvas = useMemo(() => document.createElement("canvas"), []);
-  const latest = useRef({ el, texture });
+  const latest = useRef({ el, texture, animated: !!gif });
   useEffect(() => {
-    latest.current = { el, texture };
+    latest.current = { el, texture, animated: !!gif };
   });
   useEffect(
     () =>
@@ -158,7 +206,7 @@ const ImageNodeBody = ({ el, onSelect }: Props) => {
         const posed = posedRef.current;
         const shown = pictureRef.current;
         const border = shown?.getParent()?.findOne(".picture-border");
-        const { el: now, texture: source } = latest.current;
+        const { el: now, texture: source, animated } = latest.current;
         const turning = !!pose && (pose.tiltX !== 0 || pose.tiltY !== 0) && !!source && !!posed && isTiltSupported();
         if (!turning) {
           posed?.visible(false);
@@ -166,9 +214,10 @@ const ImageNodeBody = ({ el, onSelect }: Props) => {
           border?.visible(true);
           return;
         }
-        // The same picture is turned again every frame, so it stays on the GPU meanwhile.
+        // A still picture is turned again every frame, so it stays on the GPU meanwhile;
+        // a GIF's changes with every frame, so it's sent each time.
         const scale = options.preview ? 1 : Math.max(TILT_SCALE, options.scale);
-        const box = renderTilt(source, tiltLookOf(now, pose.tiltX, pose.tiltY), scale, posedCanvas, true);
+        const box = renderTilt(source, tiltLookOf(now, pose.tiltX, pose.tiltY), scale, posedCanvas, !animated);
         if (!box) return;
         posed.setAttrs({ image: posedCanvas, ...box, visible: true });
         shown?.visible(false);
@@ -243,10 +292,10 @@ const ImageNodeBody = ({ el, onSelect }: Props) => {
             // An edited picture has the crop baked in.
             crop={
               !edited && crop ? {
-                x: crop.x * img.naturalWidth,
-                y: crop.y * img.naturalHeight,
-                width: crop.width * img.naturalWidth,
-                height: crop.height * img.naturalHeight,
+                x: crop.x * sourceWidth,
+                y: crop.y * sourceHeight,
+                width: crop.width * sourceWidth,
+                height: crop.height * sourceHeight,
               } : undefined
             }
             cornerRadius={Math.min(el.cornerRadius, el.width / 2, el.height / 2)}
@@ -279,7 +328,7 @@ const ImageNodeBody = ({ el, onSelect }: Props) => {
   // An edited picture has the crop baked in.
   const source = edited
     ? { x: 0, y: 0, width: picture.width as number, height: picture.height as number }
-    : sourceOf(crop, img.naturalWidth, img.naturalHeight);
+    : sourceOf(crop, sourceWidth, sourceHeight);
   const { drawn, shown } = pictureView(source, screen, frame);
 
   const path = screenPathOf(el, shape);

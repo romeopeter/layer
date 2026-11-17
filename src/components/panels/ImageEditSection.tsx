@@ -771,6 +771,14 @@ export const ImageEditSection = ({ image }: { image: ImageElement }) => {
     );
   }
 
+  if ((image.gif?.frames ?? 0) > 1) {
+    return (
+      <div id={IMAGE_EDIT_SECTION_ID} className="flex flex-col gap-2.5">
+        <PanelDesc>Fix, Style and Adjust are for still pictures. This GIF plays as it is.</PanelDesc>
+      </div>
+    );
+  }
+
   const setEdit: SetEdit = (patch) =>
     update(image.id, { edit: { ...image.edit, ...patch } });
 
