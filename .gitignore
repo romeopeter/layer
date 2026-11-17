@@ -15,6 +15,6 @@ SKILLS
 *.tsbuildinfo
 .agents-skills/settings.local.json
 todo.md
-implementation-phase-1.md
+implementation.md
 /src/styles/design.html
 split.md
