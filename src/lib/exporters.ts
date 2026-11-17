@@ -3,6 +3,7 @@ import { BACKGROUND_LAYER_NAME, getStage } from "../components/canvas/stageRef";
 import { useEditor } from "../store/editor";
 import { saveExport, saveProject } from "./host";
 import { openLayerFile } from "./importers";
+import { packProject } from "./projectFile";
 import { prepareExportTiles } from "./export/prepareExportTiles";
 import { prepareExportBackdrop } from "./export/prepareExportBackdrop";
 import { GRID_LAYER_NAME } from "../components/canvas/GridOverlay";
@@ -138,10 +139,7 @@ export const copyCanvasToClipboard = async (options: ExportOptions = {}) => {
 
 export const downloadProject = async () => {
   const project = useEditor.getState().toProject();
-  await saveProject(
-    JSON.stringify(project, null, 2),
-    `layer-project-${Date.now()}.layer`,
-  );
+  await saveProject(await packProject(project), `layer-project-${Date.now()}.layer`);
 };
 
 export const openProjectFile = async () => {

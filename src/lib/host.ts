@@ -34,13 +34,14 @@ export const saveExport = async (blob: Blob, filename: string) => {
   });
 };
 
-export const saveProject = async (json: string, filename: string) => {
+/** Saves a .layer file's bytes: a download on the web, a save dialog on the desktop. */
+export const saveProject = async (bytes: Uint8Array, filename: string) => {
   if (!isTauri) {
-    return downloadBlob(new Blob([json], { type: "application/json" }), filename);
+    return downloadBlob(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "application/zip" }), filename);
   }
 
   const { invoke } = await invokeCore();
-  await invoke("save_project", { json, suggestedName: filename });
+  await invoke("save_project", bytes, { headers: { "x-layer-filename": filename } });
 };
 
 /** Tells the user something went wrong, for where no panel can show it. */
@@ -52,20 +53,22 @@ export const showError = async (message: string) => {
 };
 
 /** Resolves to the chosen project's text, or null if the user cancelled. */
-export const pickProjectText = async (): Promise<string | null> => {
+/** A .layer file the user picks, as bytes, or null if they cancelled. */
+export const pickProjectFile = async (): Promise<Uint8Array | null> => {
   if (isTauri) {
     const { invoke } = await invokeCore();
-    // The command has already told the user about any failure.
-    return invoke<string | null>("open_project").catch(() => null);
+    // The command has already told the user about any failure. Nothing back is a cancel.
+    const bytes = await invoke<ArrayBuffer>("open_project").catch(() => null);
+    return bytes && bytes.byteLength > 0 ? new Uint8Array(bytes) : null;
   }
 
   const input = document.createElement("input");
   input.type = "file";
-  input.accept = ".layer,.laybel,application/json";
+  input.accept = ".layer,.laybel,application/json,application/zip";
   return new Promise((resolve, reject) => {
     input.onchange = () => {
       const file = input.files?.[0];
-      if (file) file.text().then(resolve, reject);
+      if (file) file.arrayBuffer().then((buffer) => resolve(new Uint8Array(buffer)), reject);
       else resolve(null);
     };
     input.oncancel = () => resolve(null);

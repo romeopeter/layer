@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Layer — desktop-first branded graphics editor (Phase 1)",
+  "description": "Layer — desktop-first ed branded graphics editor for everyone.",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
@@ -38,6 +38,7 @@
     "@tauri-apps/api": "^2.12.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "fflate": "0.8.3",
     "gifenc": "1.0.3",
     "konva": "^9.3.16",
     "lucide-react": "^0.460.0",

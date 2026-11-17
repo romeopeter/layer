@@ -10,13 +10,13 @@ use std::{
 
 use tauri::{
     AppHandle,
-    ipc::{InvokeBody, Request},
+    ipc::{InvokeBody, Request, Response},
 };
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
-/// `.layer` files embed images as base64, so they are legitimately large. The
-/// cap only stops an arbitrary huge file being pulled into memory and then
-/// across IPC.
+/// `.layer` files hold every picture a project uses, so they are legitimately
+/// large. The cap only stops an arbitrary huge file being pulled into memory and
+/// then across IPC.
 const MAX_PROJECT_BYTES: u64 = 512 * 1024 * 1024;
 
 const FILENAME_HEADER: &str = "x-layer-filename";
@@ -25,6 +25,8 @@ const FILENAME_HEADER: &str = "x-layer-filename";
 enum FileError {
     #[error("This file is too large to open as a project.")]
     ProjectTooLarge,
+    #[error("This file is empty, so it isn't a Layer project.")]
+    EmptyProject,
     #[error("Layer can't use the location you picked.")]
     UnsupportedLocation,
     #[error("Layer can't export this file type.")]
@@ -102,11 +104,15 @@ fn pick_save_path(
         .transpose()
 }
 
-fn read_project(path: &Path) -> Result<String, FileError> {
-    if fs::metadata(path)?.len() > MAX_PROJECT_BYTES {
+fn read_project(path: &Path) -> Result<Vec<u8>, FileError> {
+    let length = fs::metadata(path)?.len();
+    if length > MAX_PROJECT_BYTES {
         return Err(FileError::ProjectTooLarge);
     }
-    Ok(fs::read_to_string(path)?)
+    if length == 0 {
+        return Err(FileError::EmptyProject);
+    }
+    Ok(fs::read(path)?)
 }
 
 /// Runs a dialog-and-disk task off the async runtime, since both block, and
@@ -142,26 +148,28 @@ pub fn show_error(app: AppHandle, message: String) {
     show_error_dialog(&app, &message);
 }
 
+/// Takes the finished .layer file (a zip the UI builds) as a raw IPC body, with
+/// the suggested name in a header, and writes it where the user picks.
 #[tauri::command]
-pub async fn save_project(
-    app: AppHandle,
-    json: String,
-    suggested_name: String,
-) -> Result<(), String> {
+pub async fn save_project(app: AppHandle, request: Request<'_>) -> Result<(), String> {
+    let parsed = parse_export_request(&request);
+
     run_file_task(app, move |app| {
+        let (suggested_name, bytes) = parsed?;
         let filter: (&str, &[&str]) = ("Layer project", &["layer"]);
         if let Some(path) = pick_save_path(app, &suggested_name, filter)? {
-            fs::write(path, json)?;
+            fs::write(path, bytes)?;
         }
         Ok(())
     })
     .await
 }
 
-/// Returns the chosen project's text, or `None` if the user cancelled. Parsing
-/// and version checks stay in the UI, shared with the web build.
+/// Returns the chosen project's bytes, or none at all if the user cancelled.
+/// Unpacking, parsing and version checks stay in the UI, shared with the web
+/// build.
 #[tauri::command]
-pub async fn open_project(app: AppHandle) -> Result<Option<String>, String> {
+pub async fn open_project(app: AppHandle) -> Result<Response, String> {
     run_file_task(app, |app| {
         let picked = app
             .dialog()
@@ -169,14 +177,13 @@ pub async fn open_project(app: AppHandle) -> Result<Option<String>, String> {
             .add_filter("Layer project", &["layer", "laybel"])
             .blocking_pick_file();
 
-        picked
-            .map(|path| {
-                let path = path
-                    .into_path()
-                    .map_err(|_| FileError::UnsupportedLocation)?;
-                read_project(&path)
-            })
-            .transpose()
+        let Some(path) = picked else {
+            return Ok(Response::new(Vec::new()));
+        };
+        let path = path
+            .into_path()
+            .map_err(|_| FileError::UnsupportedLocation)?;
+        read_project(&path).map(Response::new)
     })
     .await
 }
@@ -280,11 +287,23 @@ mod tests {
     #[test]
     fn read_project_returns_file_contents() {
         let path = std::env::temp_dir().join(format!("layer-test-ok-{}", std::process::id()));
-        fs::write(&path, r#"{"version":1}"#).expect("write temp file");
+        // A zip's first bytes, as a .layer file starts.
+        fs::write(&path, b"PK\x03\x04rest").expect("write temp file");
 
         let result = read_project(&path);
         fs::remove_file(&path).expect("remove temp file");
 
-        assert_eq!(result.ok().as_deref(), Some(r#"{"version":1}"#));
+        assert_eq!(result.ok().as_deref(), Some(&b"PK\x03\x04rest"[..]));
+    }
+
+    #[test]
+    fn read_project_refuses_an_empty_file() {
+        let path = std::env::temp_dir().join(format!("layer-test-empty-{}", std::process::id()));
+        fs::write(&path, b"").expect("write temp file");
+
+        let result = read_project(&path);
+        fs::remove_file(&path).expect("remove temp file");
+
+        assert!(matches!(result, Err(FileError::EmptyProject)));
     }
 }
