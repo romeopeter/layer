@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Layer — desktop-first ed branded graphics editor for everyone.",
+  "description": "Layer — desktop-first editor for creating polished visuals and branded graphics for creators and businesses.",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

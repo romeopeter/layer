@@ -44,6 +44,17 @@ export const saveProject = async (bytes: Uint8Array, filename: string) => {
   await invoke("save_project", bytes, { headers: { "x-layer-filename": filename } });
 };
 
+/**
+ * The picture on the system clipboard, read by the desktop shell, for when a paste
+ * event carries none. Null on the web, or when there's no picture.
+ */
+export const readClipboardImage = async (): Promise<Blob | null> => {
+  if (!isTauri) return null;
+  const { invoke } = await invokeCore();
+  const bytes = await invoke<ArrayBuffer>("read_clipboard_image").catch(() => null);
+  return bytes && bytes.byteLength > 0 ? new Blob([bytes], { type: "image/png" }) : null;
+};
+
 /** Tells the user something went wrong, for where no panel can show it. */
 export const showError = async (message: string) => {
   if (!isTauri) return window.alert(message);

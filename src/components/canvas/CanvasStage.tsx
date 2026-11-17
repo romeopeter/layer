@@ -32,6 +32,7 @@ import {
   type SnapCandidates,
 } from "@/lib/snapping";
 import { importImageFile } from "../../lib/importers";
+import { readClipboardImage } from "@/lib/host";
 import type { LayerElement, TextElement } from "@/types";
 import { MIN_FRAME_SIZE } from "@/lib/constants";
 import { FIXED_RATIO_SHAPES } from "@/lib/marks";
@@ -246,15 +247,21 @@ export const CanvasStage = () => {
   // Handle clipboard paste to import images
   useEffect(() => {
     const onPaste = async (e: ClipboardEvent) => {
-      const items = e.clipboardData?.items;
-      if (!items) return;
-      for (const it of Array.from(items)) {
+      for (const it of Array.from(e.clipboardData?.items ?? [])) {
         if (it.type.startsWith("image/")) {
           const file = it.getAsFile();
           if (file) await importImageFile(file, addImage);
-          break;
+          return;
         }
       }
+      // Some apps put a picture on the clipboard in a form the webview doesn't pass
+      // on. On the desktop, the shell reads it, unless the paste is text into a field.
+      const target = e.target as HTMLElement | null;
+      const typing =
+        !!target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+      if (typing) return;
+      const picture = await readClipboardImage();
+      if (picture) await importImageFile(picture, addImage);
     };
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
