@@ -1,5 +1,6 @@
 //! Things the user keeps to use again in any project (saved backgrounds, brand
-//! kits), each in a file in the app's data folder until SQLite lands. The webview
+//! kits) and how they like Layer set up (preferences), each in a file in the
+//! app's data folder until SQLite lands. The webview
 //! sends and receives them as JSON text; this side only checks their shape and
 //! keeps them whole.
 
@@ -40,6 +41,13 @@ const BRAND_KITS: Kept = Kept {
     is_whole: is_kits_file,
 };
 
+const PREFERENCES: Kept = Kept {
+    file_name: "preferences.json",
+    what: "preferences",
+    empty: "{}",
+    is_whole: is_object,
+};
+
 #[derive(Debug, thiserror::Error)]
 enum SaveError {
     #[error("Layer couldn't find its data folder.")]
@@ -55,6 +63,10 @@ enum SaveError {
 
 fn is_list(text: &str) -> bool {
     serde_json::from_str::<Vec<serde_json::Value>>(text).is_ok()
+}
+
+fn is_object(text: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(text).is_ok_and(|value| value.is_object())
 }
 
 /// An object with a list of kits in it.
@@ -131,6 +143,16 @@ pub async fn store_brand_kits(app: AppHandle, kits: String) -> Result<(), String
     store(app, &BRAND_KITS, kits).await
 }
 
+#[tauri::command]
+pub async fn load_preferences(app: AppHandle) -> Result<String, String> {
+    load(app, &PREFERENCES).await
+}
+
+#[tauri::command]
+pub async fn store_preferences(app: AppHandle, preferences: String) -> Result<(), String> {
+    store(app, &PREFERENCES, preferences).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -162,9 +184,24 @@ mod tests {
     }
 
     #[test]
+    fn keeps_preferences_and_reads_them_back() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let path = file_in(&directory, &PREFERENCES);
+        let file = r#"{"theme":"light","dottedGrid":false,"reduceMotion":true}"#;
+
+        write_kept(&path, &PREFERENCES, file).expect("saved");
+
+        assert_eq!(read_kept(&path, &PREFERENCES), file);
+        assert!(matches!(
+            write_kept(&path, &PREFERENCES, r#"["light"]"#),
+            Err(SaveError::NotWhole(_))
+        ));
+    }
+
+    #[test]
     fn no_file_or_a_damaged_one_reads_as_empty() {
         let directory = tempfile::tempdir().expect("temp dir");
-        for kept in [&SAVED_BACKGROUNDS, &BRAND_KITS] {
+        for kept in [&SAVED_BACKGROUNDS, &BRAND_KITS, &PREFERENCES] {
             let path = file_in(&directory, kept);
             assert_eq!(read_kept(&path, kept), kept.empty);
 
@@ -176,7 +213,7 @@ mod tests {
 
     #[test]
     fn the_empty_kinds_are_whole() {
-        for kept in [&SAVED_BACKGROUNDS, &BRAND_KITS] {
+        for kept in [&SAVED_BACKGROUNDS, &BRAND_KITS, &PREFERENCES] {
             assert!((kept.is_whole)(kept.empty));
         }
     }

@@ -24,6 +24,8 @@ import { DEFAULT_PATTERN_CONFIG } from "../types/pattern";
 import type { BackdropLook } from "../types/backdrop";
 import type { BrandKit, BrandKitsFile } from "../types/brand";
 import type { DesignMotion, ElementMotion, EnterMove, ZoomSpot } from "../types/motion";
+import type { Preferences } from "../types/preferences";
+import { DEFAULT_PREFERENCES, normalisePreferences } from "../lib/preferences";
 import { DEFAULT_BACKDROP } from "../lib/backdrops/presets";
 import { NO_EFFECTS } from "../lib/background/effects";
 import { DEFAULT_GRADIENT, normaliseBackground } from "../lib/background/normalise";
@@ -36,7 +38,7 @@ import {
   type BackgroundLook,
   type ShuffleMode,
 } from "../lib/background/looks";
-import { storeBrandKits, storeSavedBackgrounds } from "../lib/host";
+import { storeBrandKits, storePreferences, storeSavedBackgrounds } from "../lib/host";
 import { DEFAULT_WATERMARK, marginOf, normaliseWatermark } from "../lib/watermark";
 import { brandId, kitFromDesign, nextKitName } from "../lib/brand/kits";
 import { brandPatch } from "../lib/brand/apply";
@@ -124,7 +126,6 @@ const DEFAULT_GRID: GridState = {
  * the Properties panel instead, whatever this is.
  */
 type Tool =
-  | "ai"
   | "uploads"
   | "templates"
   | "images"
@@ -178,6 +179,8 @@ interface EditorState {
   activeBrandKitId: string | null;
   /** Transient: goes up when a font finishes loading, so text set in it is measured again. */
   fontsVersion: number;
+  /** How the user likes Layer set up, from Customize. Not part of the project or of undo. */
+  preferences: Preferences;
   /** Transient: what a canvas drag creates. Null means it selects and moves. */
   markTool: MarkTool | null;
   /** Style for the next mark, by category. Lasts the session, not the project. */
@@ -227,6 +230,10 @@ interface EditorState {
   setActiveBrandKit: (id: string) => void;
   /** Puts the whole design in a brand, as one undo step. */
   applyBrand: (id: string) => void;
+  /** Changes how Layer is set up, and keeps it for next time. */
+  setPreferences: (patch: Partial<Preferences>) => void;
+  /** Fills the preferences from their file, at launch. */
+  loadPreferences: (file: unknown) => void;
   /** Changes Layer's badge. */
   setBadge: (patch: Partial<WatermarkSettings["badge"]>) => void;
   /** Changes the user's own watermark. */
@@ -336,6 +343,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   brandKits: [],
   activeBrandKitId: null,
   fontsVersion: 0,
+  preferences: DEFAULT_PREFERENCES,
   markTool: null,
   markStyles: DEFAULT_MARK_STYLES,
   editingId: null,
@@ -537,6 +545,13 @@ export const useEditor = create<EditorState>((set, get) => ({
   setCropId: (id) => set({ cropId: id, editingId: null }),
 
   setMotion: (patch) => set({ motion: { ...get().motion, ...patch } }),
+
+  setPreferences: (patch) => {
+    set({ preferences: { ...get().preferences, ...patch } });
+    savePreferencesSoon();
+  },
+
+  loadPreferences: (file) => set({ preferences: normalisePreferences(file) }),
 
   addZoomSpot: () => {
     const { motion, canvas, elements, selectedIds } = get();
@@ -1031,6 +1046,15 @@ export const useEditor = create<EditorState>((set, get) => ({
     history.reset();
   },
 }));
+
+/** Writes preferences to their file once switches stop being flicked. */
+let preferencesSave: ReturnType<typeof setTimeout> | undefined;
+const savePreferencesSoon = () => {
+  clearTimeout(preferencesSave);
+  preferencesSave = setTimeout(() => {
+    void storePreferences(useEditor.getState().preferences).catch((error) => console.error(error));
+  }, 200);
+};
 
 /** How long kit changes wait before they're written: a colour picker changes many times a second. */
 const BRAND_SAVE_DELAY = 400;

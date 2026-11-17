@@ -102,6 +102,16 @@
   *::after {
     box-sizing: border-box;
   }
+  /* Customize › Reduce motion: menus, dialogs and panels appear without moving.
+     The canvas's own animation only ever plays when asked. */
+  [data-reduce-motion="true"] *,
+  [data-reduce-motion="true"] *::before,
+  [data-reduce-motion="true"] *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
   /* macOS set to "always show scrollbars" otherwise draws bright ones in the webview. */
   ::-webkit-scrollbar {
     width: 8px;

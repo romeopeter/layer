@@ -1,7 +1,9 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { Upload, Minus, Plus, Delete, Command } from "lucide-react";
 import { DEFAULT_BACKGROUND, useEditor, ZOOM_MAX, ZOOM_MIN } from "@/store/editor";
-import { loadBrandKits, loadSavedBackgrounds } from "@/lib/host";
+import { loadBrandKits, loadPreferences, loadSavedBackgrounds } from "@/lib/host";
+import { reducesMotion } from "@/lib/preferences";
+import { cn } from "@/lib/utils";
 import { normaliseSavedBackgrounds } from "@/lib/background/normalise";
 import { normaliseBrandKits } from "@/lib/brand/normalise";
 import { TopBar } from "@/components/TopBar";
@@ -52,20 +54,44 @@ export const App = () => {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
   const [customizeOpen, setCustomizeOpen] = useState(false);
-  const [hiddenTools, setHiddenTools] = useState<Record<string, boolean>>({});
+  const preferences = useEditor((s) => s.preferences);
+  const setPreferences = useEditor((s) => s.setPreferences);
   const [dragOver, setDragOver] = useState(false);
 
-  // Backgrounds and brand kits saved in earlier sessions, from the desktop's files.
+  // Backgrounds, brand kits and preferences from earlier sessions, from the desktop's files.
   useEffect(() => {
     void loadSavedBackgrounds().then((list) =>
       useEditor.getState().setSavedBackgrounds(normaliseSavedBackgrounds(list, DEFAULT_BACKGROUND)),
     );
     void loadBrandKits().then((file) => useEditor.getState().setBrandKits(normaliseBrandKits(file)));
+    void loadPreferences().then((file) => file && useEditor.getState().loadPreferences(file));
   }, []);
 
-  const toggleVisible = useCallback((k: string) => {
-    setHiddenTools((h) => ({ ...h, [k]: !h[k] }));
-  }, []);
+  // The theme and motion are set on the page, where the styles read them.
+  useEffect(() => {
+    const root = document.documentElement;
+    root.dataset.theme = preferences.theme;
+    const apply = () => {
+      root.dataset.reduceMotion = String(reducesMotion(preferences));
+    };
+    apply();
+    // Following the system's setting, a change there shows at once.
+    const system = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+    system?.addEventListener("change", apply);
+    return () => system?.removeEventListener("change", apply);
+  }, [preferences]);
+
+  const hiddenTools = useMemo(
+    () => Object.fromEntries(preferences.hiddenGroups.map((key) => [key, true])),
+    [preferences.hiddenGroups],
+  );
+  const toggleVisible = useCallback(
+    (key: string) => {
+      const hidden = useEditor.getState().preferences.hiddenGroups;
+      setPreferences({ hiddenGroups: hidden.includes(key) ? hidden.filter((k) => k !== key) : [...hidden, key] });
+    },
+    [setPreferences],
+  );
 
   const openPreview = useCallback(async () => {
     setPreviewDataUrl(await renderCanvasDataURL("png", 1));
@@ -162,7 +188,12 @@ export const App = () => {
         )}
 
         <main className="relative min-w-0 flex-1 overflow-hidden bg-canvas">
-          <div className="size-full bg-dot-grid absolute inset-0 bottom-20 flex items-center justify-center">
+          <div
+            className={cn(
+              "absolute inset-0 bottom-20 flex size-full items-center justify-center",
+              preferences.dottedGrid && "bg-dot-grid",
+            )}
+          >
             <CanvasStage />
 
             {/* Out of the way once a tool is armed: its icon takes pointer events,

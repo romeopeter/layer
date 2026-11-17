@@ -203,6 +203,27 @@ export const storeBrandKits = async (file: unknown) => {
   }
 };
 
+/** How the user likes Layer set up. Null on the web, where they last for the session. */
+export const loadPreferences = async (): Promise<unknown> => {
+  if (!isTauri) return null;
+  const { invoke } = await invokeCore();
+  try {
+    return JSON.parse(await invoke<string>("load_preferences"));
+  } catch {
+    return null;
+  }
+};
+
+export const storePreferences = async (preferences: unknown) => {
+  if (!isTauri) return;
+  const { invoke } = await invokeCore();
+  try {
+    await invoke("store_preferences", { preferences: JSON.stringify(preferences) });
+  } catch (error) {
+    throw new Error(String(error), { cause: error });
+  }
+};
+
 /** Google Fonts come through the desktop shell, so the webview never talks to Google. */
 export const hasGoogleFonts = isTauri;
 

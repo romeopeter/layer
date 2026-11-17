@@ -31,6 +31,8 @@ pub fn run() {
             saved::store_saved_backgrounds,
             saved::load_brand_kits,
             saved::store_brand_kits,
+            saved::load_preferences,
+            saved::store_preferences,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Layer");
