@@ -203,6 +203,27 @@ export const storeBrandKits = async (file: unknown) => {
   }
 };
 
+/** Pattern colour pairs the user made. Null on the web, where they last for the session. */
+export const loadPatternColors = async (): Promise<unknown> => {
+  if (!isTauri) return null;
+  const { invoke } = await invokeCore();
+  try {
+    return JSON.parse(await invoke<string>("load_pattern_colors"));
+  } catch {
+    return null;
+  }
+};
+
+export const storePatternColors = async (list: unknown) => {
+  if (!isTauri) return;
+  const { invoke } = await invokeCore();
+  try {
+    await invoke("store_pattern_colors", { list: JSON.stringify(list) });
+  } catch (error) {
+    throw new Error(String(error), { cause: error });
+  }
+};
+
 /** How the user likes Layer set up. Null on the web, where they last for the session. */
 export const loadPreferences = async (): Promise<unknown> => {
   if (!isTauri) return null;

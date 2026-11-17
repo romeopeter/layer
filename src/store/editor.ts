@@ -38,7 +38,7 @@ import {
   type BackgroundLook,
   type ShuffleMode,
 } from "../lib/background/looks";
-import { storeBrandKits, storePreferences, storeSavedBackgrounds } from "../lib/host";
+import { storeBrandKits, storePatternColors, storePreferences, storeSavedBackgrounds } from "../lib/host";
 import { DEFAULT_WATERMARK, marginOf, normaliseWatermark } from "../lib/watermark";
 import { brandId, kitFromDesign, nextKitName } from "../lib/brand/kits";
 import { brandPatch } from "../lib/brand/apply";
@@ -257,9 +257,11 @@ interface EditorState {
   undo: () => void;
   redo: () => void;
 
-  // pattern colour pairs (in-memory; see "Deferred Rust Implementations" in CLAUDE.md)
+  // pattern colour pairs the user made: pattern-colors.json on the desktop, the session on the web
   addCustomPatternPair: (base: string, accent: string, label?: string) => string;
   deleteCustomPatternPair: (id: string) => void;
+  /** Fills the pairs from their file, at launch, keeping any made since. */
+  setCustomPatternPairs: (pairs: PatternColorPair[]) => void;
 
   // elements
   addImage: (src: string, naturalWidth: number, naturalHeight: number) => string;
@@ -635,11 +637,19 @@ export const useEditor = create<EditorState>((set, get) => ({
       label,
     };
     set({ customPatternPairs: [...get().customPatternPairs, pair] });
+    void storePatternColors(get().customPatternPairs).catch((error) => console.error(error));
     return pair.id;
   },
 
-  deleteCustomPatternPair: (id) =>
-    set({ customPatternPairs: get().customPatternPairs.filter((p) => p.id !== id) }),
+  deleteCustomPatternPair: (id) => {
+    set({ customPatternPairs: get().customPatternPairs.filter((p) => p.id !== id) });
+    void storePatternColors(get().customPatternPairs).catch((error) => console.error(error));
+  },
+
+  setCustomPatternPairs: (pairs) => {
+    const made = get().customPatternPairs.filter((pair) => !pairs.some((kept) => kept.id === pair.id));
+    set({ customPatternPairs: [...pairs, ...made] });
+  },
 
   addImage: (src, naturalWidth, naturalHeight) => {
     const { canvas, elements } = get();

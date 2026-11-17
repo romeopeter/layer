@@ -31,6 +31,8 @@ pub fn run() {
             saved::store_saved_backgrounds,
             saved::load_brand_kits,
             saved::store_brand_kits,
+            saved::load_pattern_colors,
+            saved::store_pattern_colors,
             saved::load_preferences,
             saved::store_preferences,
         ])

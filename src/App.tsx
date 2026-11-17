@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { Upload, Minus, Plus, Delete, Command } from "lucide-react";
 import { DEFAULT_BACKGROUND, useEditor, ZOOM_MAX, ZOOM_MIN } from "@/store/editor";
-import { loadBrandKits, loadPreferences, loadSavedBackgrounds } from "@/lib/host";
+import { loadBrandKits, loadPatternColors, loadPreferences, loadSavedBackgrounds } from "@/lib/host";
+import { normaliseCustomPairs } from "@/lib/patterns/customPairs";
 import { reducesMotion } from "@/lib/preferences";
 import { cn } from "@/lib/utils";
 import { normaliseSavedBackgrounds } from "@/lib/background/normalise";
@@ -58,13 +59,14 @@ export const App = () => {
   const setPreferences = useEditor((s) => s.setPreferences);
   const [dragOver, setDragOver] = useState(false);
 
-  // Backgrounds, brand kits and preferences from earlier sessions, from the desktop's files.
+  // Backgrounds, brand kits, pattern colours and preferences from earlier sessions, from the desktop's files.
   useEffect(() => {
     void loadSavedBackgrounds().then((list) =>
       useEditor.getState().setSavedBackgrounds(normaliseSavedBackgrounds(list, DEFAULT_BACKGROUND)),
     );
     void loadBrandKits().then((file) => useEditor.getState().setBrandKits(normaliseBrandKits(file)));
     void loadPreferences().then((file) => file && useEditor.getState().loadPreferences(file));
+    void loadPatternColors().then((list) => useEditor.getState().setCustomPatternPairs(normaliseCustomPairs(list)));
   }, []);
 
   // The theme and motion are set on the page, where the styles read them.
