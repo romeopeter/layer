@@ -8,12 +8,16 @@ mod fonts;
 mod menu;
 mod pixabay;
 mod saved;
+mod updates;
 
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         // Read from Rust only (clipboard.rs): the window's capabilities grant none of it.
         .plugin(tauri_plugin_clipboard_manager::init())
+        // Driven from Rust (updates.rs); the page asks through Layer's own commands.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(updates::PendingUpdate::default())
         .setup(|app| {
             let cache_file = app
                 .path()
@@ -42,6 +46,8 @@ pub fn run() {
             brand_assets::load_brand_asset,
             clipboard::read_clipboard_image,
             menu::sync_menu,
+            updates::check_for_update,
+            updates::install_update,
             saved::load_pattern_colors,
             saved::store_pattern_colors,
             saved::load_preferences,

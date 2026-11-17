@@ -26,6 +26,7 @@ import type { BackdropLook } from "../types/backdrop";
 import type { BrandKit, BrandKitsFile } from "../types/brand";
 import type { DesignMotion, ElementMotion, EnterMove, ZoomSpot } from "../types/motion";
 import type { Preferences } from "../types/preferences";
+import type { UpdateState } from "../lib/updates";
 import { DEFAULT_PREFERENCES, normalisePreferences } from "../lib/preferences";
 import { DEFAULT_BACKDROP } from "../lib/backdrops/presets";
 import { NO_EFFECTS } from "../lib/background/effects";
@@ -189,6 +190,8 @@ interface EditorState {
   fontsVersion: number;
   /** How the user likes Layer set up, from Customize. Not part of the project or of undo. */
   preferences: Preferences;
+  /** Transient: Layer's own update, as far as it's got. See `lib/updates.ts`. */
+  update: UpdateState;
   /** Transient: what a canvas drag creates. Null means it selects and moves. */
   markTool: MarkTool | null;
   /** Style for the next mark, by category. Lasts the session, not the project. */
@@ -360,6 +363,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   activeBrandKitId: null,
   fontsVersion: 0,
   preferences: DEFAULT_PREFERENCES,
+  update: { status: "idle", open: false },
   markTool: null,
   markStyles: DEFAULT_MARK_STYLES,
   editingId: null,

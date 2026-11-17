@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { OPEN_EXPORT_EVENT } from "@/lib/appActions";
+import { showUpdate } from "@/lib/updates";
 import { Undo, Redo, Eye, ChevronDown, Download } from "lucide-react";
 import { useEditor } from "@/store/editor";
 import { Button } from "@/components/ui/button";
@@ -30,6 +31,8 @@ export const TopBar = ({ onPreview }: Props) => {
   const [sizePickerOpen, setSizePickerOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const animation = useAnimationExport();
+  // A newer Layer, found by the quiet check after launch.
+  const updateReady = useEditor((s) => s.update.status === "available" && !s.update.open);
   // File › Export… in the menu bar opens the same menu.
   useEffect(() => {
     const open = () => setExportOpen(true);
@@ -124,6 +127,12 @@ export const TopBar = ({ onPreview }: Props) => {
         className="relative flex items-center justify-end gap-2"
       >
         {/* <Button variant="ghost" size="sm" className="cursor-pointer">Save as Template</Button> */}
+
+        {updateReady && (
+          <Button variant="ghost" size="sm" className="cursor-pointer" onClick={() => showUpdate(true)}>
+            <span className="h-1.5 w-1.5 rounded-full bg-t-400" aria-hidden /> Update
+          </Button>
+        )}
 
         <Popover open={exportOpen} onOpenChange={setExportOpen}>
           <PopoverTrigger asChild>

@@ -1,0 +1,131 @@
+# Builds Layer for macOS, Windows and Linux and publishes them as a draft GitHub
+# release, with the files installed copies update from. Run it by pushing a tag
+# that matches package.json's version (git tag v0.2.0 && git push origin v0.2.0),
+# or from the Actions tab. Review the draft, then publish it: updates reach
+# installed copies only once it's published.
+#
+# Every key and certificate is optional, and each comes from the repo's secrets.
+# Without the updater key, builds can't update themselves; without a platform's
+# certificate, that platform's build is unsigned, as local builds are. See
+# learn/18-releases-and-updates.md for what each secret is and how to make it.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: --target universal-apple-darwin
+          - platform: windows-latest
+            args: ""
+          - platform: ubuntu-22.04
+            args: ""
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # One app for both kinds of Mac.
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Linux libraries
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - run: npm ci
+
+      # Passes on only the secrets that are set: an empty one would make the
+      # build try to sign with nothing and fail. Also picks the extra config
+      # each one switches on.
+      - name: Keys and certificates that are set
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SIGNING_ENDPOINT: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
+          AZURE_SIGNING_PROFILE: ${{ secrets.AZURE_SIGNING_PROFILE }}
+        run: |
+          pass_on() {
+            local name="$1"
+            if [ -n "${!name}" ]; then
+              { echo "$name<<__LAYER_END__"; echo "${!name}"; echo "__LAYER_END__"; } >> "$GITHUB_ENV"
+            fi
+          }
+          for name in TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD \
+            APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY \
+            APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID \
+            AZURE_CLIENT_ID AZURE_CLIENT_SECRET AZURE_TENANT_ID; do
+            pass_on "$name"
+          done
+
+          extra=""
+          # Update files (and their signatures) need the updater's private key.
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            extra="$extra --config src-tauri/tauri.release.conf.json"
+          else
+            echo "::warning::No TAURI_SIGNING_PRIVATE_KEY: this release can't update installed copies."
+          fi
+          # Windows signs through Azure Trusted Signing, once it's set up.
+          if [ "$RUNNER_OS" = "Windows" ] && [ -n "$AZURE_CLIENT_ID" ] && [ -n "$AZURE_SIGNING_ENDPOINT" ]; then
+            printf '{"bundle":{"windows":{"signCommand":"trusted-signing-cli -e %s -a %s -c %s -d Layer %%1"}}}\n' \
+              "$AZURE_SIGNING_ENDPOINT" "$AZURE_SIGNING_ACCOUNT" "$AZURE_SIGNING_PROFILE" \
+              > src-tauri/tauri.windows-signing.conf.json
+            extra="$extra --config src-tauri/tauri.windows-signing.conf.json"
+            echo "WINDOWS_SIGNING=true" >> "$GITHUB_ENV"
+          fi
+          if [ "$RUNNER_OS" = "macOS" ] && [ -z "$APPLE_CERTIFICATE" ]; then
+            echo "::warning::No APPLE_CERTIFICATE: the Mac build is unsigned and not notarized."
+          fi
+          echo "EXTRA_ARGS=$extra" >> "$GITHUB_ENV"
+
+      - name: Windows signing tool
+        if: matrix.platform == 'windows-latest' && env.WINDOWS_SIGNING == 'true'
+        run: cargo install trusted-signing-cli --locked
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # The version comes from package.json, so the tag always matches it.
+          tagName: v__VERSION__
+          releaseName: Layer __VERSION__
+          releaseBody: Layer __VERSION__. Publish this release for installed copies to update.
+          releaseDraft: true
+          prerelease: false
+          includeUpdaterJson: true
+          args: ${{ matrix.args }} ${{ env.EXTRA_ARGS }}

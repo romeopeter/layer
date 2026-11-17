@@ -55,6 +55,41 @@ export const readClipboardImage = async (): Promise<Blob | null> => {
   return bytes && bytes.byteLength > 0 ? new Blob([bytes], { type: "image/png" }) : null;
 };
 
+/** Layer's own updates come with the desktop app. */
+export const hasUpdates = isTauri;
+
+export interface AvailableUpdate {
+  version: string;
+  notes: string | null;
+}
+
+/** Asks whether there's a newer Layer. Throws a message for the user if it couldn't ask. */
+export const checkUpdate = async (): Promise<AvailableUpdate | null> => {
+  const { invoke } = await invokeCore();
+  try {
+    return await invoke<AvailableUpdate | null>("check_for_update");
+  } catch (error) {
+    throw new Error(String(error), { cause: error });
+  }
+};
+
+/**
+ * Downloads and installs the update the last check found, then restarts into it.
+ * `onProgress` hears bytes so far and the total, if known. Returns only on failure.
+ */
+export const installUpdate = async (onProgress: (done: number, total: number | null) => void) => {
+  const { invoke } = await invokeCore();
+  const { listen } = await import("@tauri-apps/api/event");
+  const stop = await listen<[number, number | null]>("update-progress", (event) => onProgress(...event.payload));
+  try {
+    await invoke("install_update");
+  } catch (error) {
+    throw new Error(String(error), { cause: error });
+  } finally {
+    stop();
+  }
+};
+
 /** Asks before something that can't be undone. True if the user chose `go`. */
 export const confirmAction = async (message: string, go: string): Promise<boolean> => {
   if (!isTauri) return window.confirm(message);

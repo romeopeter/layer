@@ -9,7 +9,9 @@ import {
   onMenu,
   syncMenu,
 } from "@/lib/host";
-import { runFromKey, runFromMenu, type AppAction } from "@/lib/appActions";
+import { runFromKey, runFromMenu, setUpdateChecker, type AppAction } from "@/lib/appActions";
+import { checkForUpdates, QUIET_CHECK_DELAY } from "@/lib/updates";
+import { UpdateDialog } from "@/components/UpdateDialog";
 import { normaliseCustomPairs } from "@/lib/patterns/customPairs";
 import { reducesMotion } from "@/lib/preferences";
 import { cn } from "@/lib/utils";
@@ -101,6 +103,14 @@ export const App = () => {
 
   // The desktop's menu bar runs the same actions as the shortcuts.
   useEffect(() => onMenu((id) => void runFromMenu(id)), []);
+
+  // Layer's own updates: Check for Updates asks at once; built apps also ask quietly after launch.
+  useEffect(() => {
+    setUpdateChecker(() => checkForUpdates({ manual: true }));
+    if (!import.meta.env.PROD) return;
+    const timer = setTimeout(() => void checkForUpdates({ manual: false }), QUIET_CHECK_DELAY);
+    return () => clearTimeout(timer);
+  }, []);
   const gridOn = useEditor((s) => s.grid.enabled);
   useEffect(() => {
     void syncMenu({ darkMode: preferences.theme === "dark", grid: gridOn });
@@ -319,6 +329,8 @@ export const App = () => {
         </main>
         <PropertiesPanel />
       </div>
+
+      <UpdateDialog />
 
       <SocialPreviewModal
         open={previewOpen}
