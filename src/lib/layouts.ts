@@ -1,10 +1,14 @@
 import { frameShape, pictureRatioOf } from "./mockups";
+import { POST_SIZES } from "./canvasSizes";
 import type {
   CanvasLayout,
+  CardFill,
   ImageCrop,
   ImageElement,
   LayerElement,
   LayoutAlign,
+  LayoutCards,
+  LayoutDivider,
   LayoutId,
   LayoutSlot,
 } from "@/types";
@@ -138,19 +142,76 @@ export const LAYOUTS: LayoutDef[] = [
 
 export const layoutOf = (id: LayoutId) => LAYOUTS.find((layout) => layout.id === id);
 
+/** Whether a layout has a divider to offer: rows and columns, unless an arrow fills the gap. */
+export const hasDivider = (id: LayoutId) => {
+  const def = layoutOf(id);
+  return !!def && (def.kind === "row" || def.kind === "column") && def.decor !== "arrow-between";
+};
+
+export const isOverlap = (id: LayoutId) => layoutOf(id)?.kind === "overlap";
+
+export const DEFAULT_DIVIDER: LayoutDivider = { style: "none", color: "#FFFFFF", width: 3 };
+export const DEFAULT_CARD_FILL: CardFill = { kind: "solid", color: "#FFFFFF" };
+const DEFAULT_CARDS: LayoutCards = { show: false, padding: 30, corners: 30, fills: [] };
+/** How overlap layouts looked before they had a setting of their own (spacing 30). */
+const DEFAULT_OVERLAP = 70;
+
+/** One fill per slot: those there are, by position, then the default. */
+const fillsFor = (fills: CardFill[] | undefined, count: number) =>
+  Array.from({ length: count }, (_, i) => fills?.[i] ?? DEFAULT_CARD_FILL);
+
 export const newLayout = (id: LayoutId, previous: CanvasLayout | null): CanvasLayout => {
   const def = layoutOf(id);
+  const count = def?.slots ?? 0;
+  const cards = previous?.cards ?? DEFAULT_CARDS;
   return {
     id,
     align: previous?.align ?? "center",
     spacing: previous?.spacing ?? 30,
+    overlap: previous?.overlap ?? DEFAULT_OVERLAP,
     scale: previous?.scale ?? 80,
     sameWidth: previous?.sameWidth ?? true,
     sameShape: !!def?.fills,
     showLabels: true,
     labels: def?.labels ?? [],
-    slots: Array.from({ length: def?.slots ?? 0 }, (): LayoutSlot => ({ id: null })),
+    slots: Array.from({ length: count }, (): LayoutSlot => ({ id: null })),
+    divider: previous?.divider ?? DEFAULT_DIVIDER,
+    cards: { ...cards, fills: fillsFor(cards.fills, count) },
   };
+};
+
+/**
+ * A layout from a project file, with anything an older file lacks filled in so it
+ * looks as it did. Null if it isn't a layout Layer knows.
+ */
+export const normaliseLayout = (raw: CanvasLayout | null | undefined): CanvasLayout | null => {
+  const def = raw ? layoutOf(raw.id) : undefined;
+  if (!raw || !def || !Array.isArray(raw.slots)) return null;
+  const spacing = typeof raw.spacing === "number" ? raw.spacing : 30;
+  const { front } = raw;
+  const cards: LayoutCards = { ...DEFAULT_CARDS, ...raw.cards };
+  return {
+    ...raw,
+    spacing,
+    // Overlap layouts used spacing for how far apart their images sat.
+    overlap:
+      typeof raw.overlap === "number" ? raw.overlap : def.kind === "overlap" ? 100 - spacing : DEFAULT_OVERLAP,
+    front: Number.isInteger(front) && front! >= 0 && front! < raw.slots.length ? front : undefined,
+    divider: { ...DEFAULT_DIVIDER, ...raw.divider },
+    cards: { ...cards, fills: fillsFor(Array.isArray(cards.fills) ? cards.fills : [], raw.slots.length) },
+  };
+};
+
+/** The Konva id of an image's card, which an animation moves along with the image. */
+export const cardIdOf = (imageId: string) => `card-${imageId}`;
+
+/** Slots from back to front: the furthest from the front slot first, ties in slot order. */
+export const stackOrder = (layout: Pick<CanvasLayout, "slots" | "front">) => {
+  const count = layout.slots.length;
+  const front = layout.front !== undefined && layout.front < count ? layout.front : count - 1;
+  return Array.from({ length: count }, (_, i) => i).sort(
+    (a, b) => Math.abs(b - front) - Math.abs(a - front) || a - b,
+  );
 };
 
 /* ------------------------------------------------------------------------ */
@@ -222,11 +283,22 @@ export interface PlacedSlot extends Rect {
 export type LayoutDecor =
   | { kind: "verdict"; good: boolean; x: number; y: number; radius: number }
   | { kind: "arrow"; points: number[]; width: number }
-  | { kind: "label"; text: string; x: number; y: number; width: number; size: number };
+  | { kind: "label"; text: string; x: number; y: number; width: number; size: number }
+  | {
+      kind: "divider";
+      points: [number, number, number, number];
+      width: number;
+      color: string;
+      style: Exclude<LayoutDivider["style"], "none">;
+    };
 
 export interface Arrangement {
   slots: PlacedSlot[];
   decor: LayoutDecor[];
+  /** Slot indices from back to front. */
+  order: number[];
+  /** Cards behind the images: how far each reaches past its image, and its corners. */
+  cards?: { pad: number; radius: number };
 }
 
 const areaOf = (layout: CanvasLayout, canvas: { width: number; height: number }): Rect => {
@@ -290,7 +362,7 @@ export const arrangeLayout = (
   canvas: { width: number; height: number },
 ): Arrangement => {
   const def = layoutOf(layout.id);
-  if (!def) return { slots: [], decor: [] };
+  if (!def) return { slots: [], decor: [], order: [] };
 
   const short = Math.min(canvas.width, canvas.height);
   let area = areaOf(layout, canvas);
@@ -302,6 +374,18 @@ export const arrangeLayout = (
   const reference = Math.min(area.width, area.height);
   let gap = (layout.spacing / 100) * 0.12 * reference;
   if (def.decor === "arrow-between") gap = Math.max(gap, area.width * 0.12);
+
+  // Cards keep the slots' outer edges and gaps: the images move in from them.
+  const pad = layout.cards.show ? (layout.cards.padding / 100) * 0.1 * reference : 0;
+  if (pad) {
+    area = {
+      x: area.x + pad,
+      y: area.y + pad,
+      width: Math.max(area.width - pad * 2, 1),
+      height: Math.max(area.height - pad * 2, 1),
+    };
+    gap += pad * 2;
+  }
 
   const pictures = layout.slots.map((slot) => {
     const el = elements.find((element) => element.id === slot.id);
@@ -332,8 +416,8 @@ export const arrangeLayout = (
     });
   } else {
     const { size, places } = def.overlap ?? { size: 1, places: [] };
-    // Spacing here is how far apart the images sit: at the top they just touch the area's edges.
-    const spread = 0.3 + 0.7 * (layout.spacing / 100);
+    // How far apart the images sit: with the least overlap they just touch the area's edges.
+    const spread = 0.3 + 0.7 * (1 - layout.overlap / 100);
     const centreX = area.x + area.width / 2;
     const centreY = area.y + area.height / 2;
     rects = places.map(([dx, dy, rotation], i) => {
@@ -379,9 +463,32 @@ export const arrangeLayout = (
   });
 
   const decor: LayoutDecor[] = [];
+
+  // In the middle of each gap, as long as the two images it's between (cards included).
+  if (layout.divider.style !== "none" && hasDivider(layout.id)) {
+    const { style, color } = layout.divider;
+    const width = (short * layout.divider.width) / 400;
+    for (let i = 0; i + 1 < slots.length; i++) {
+      const a = slots[i];
+      const b = slots[i + 1];
+      if (def.kind === "row") {
+        const x = (a.x + a.width + b.x) / 2;
+        const top = Math.min(a.y, b.y) - pad;
+        const bottom = Math.max(a.y + a.height, b.y + b.height) + pad;
+        decor.push({ kind: "divider", points: [x, top, x, bottom], width, color, style });
+      } else {
+        const y = (a.y + a.height + b.y) / 2;
+        const left = Math.min(a.x, b.x) - pad;
+        const right = Math.max(a.x + a.width, b.x + b.width) + pad;
+        decor.push({ kind: "divider", points: [left, y, right, y], width, color, style });
+      }
+    }
+  }
+
   const [first, second] = slots;
   if (first && second) {
-    const topOf = (slot: PlacedSlot) => [slot.x + slot.width / 2, slot.y] as const;
+    // Badges and arrows sit on the card's edge when there is one.
+    const topOf = (slot: PlacedSlot) => [slot.x + slot.width / 2, slot.y - pad] as const;
     if (def.decor === "verdict") {
       const radius = short * 0.028;
       [first, second].forEach((slot, i) => {
@@ -400,8 +507,8 @@ export const arrangeLayout = (
       });
     }
     if (def.decor === "arrow-between") {
-      const from = first.x + first.width;
-      const room = second.x - from;
+      const from = first.x + first.width + pad;
+      const room = second.x - pad - from;
       const y = alignIn(area.y, area.height, "center");
       decor.push({
         kind: "arrow",
@@ -427,13 +534,21 @@ export const arrangeLayout = (
     });
   }
 
-  return { slots, decor };
+  const order = stackOrder(layout);
+  // Even with no padding, a card shows through a see-through picture.
+  if (!layout.cards.show) return { slots, decor, order };
+  // One roundness for every card, from the smallest, so they match.
+  const smallest = Math.min(...slots.map((slot) => Math.min(slot.width, slot.height))) + pad * 2;
+  const radius = (layout.cards.corners / 100) * 0.2 * (Number.isFinite(smallest) ? smallest : 0);
+  return { slots, decor, order, cards: { pad, radius } };
 };
 
-/** The slot under a canvas point. Later slots sit on top, so they win. */
+/** The slot under a canvas point: the one in front wins. */
 export const slotAt = (arrangement: Arrangement, x: number, y: number) => {
-  for (let i = arrangement.slots.length - 1; i >= 0; i--) {
+  for (let at = arrangement.order.length - 1; at >= 0; at--) {
+    const i = arrangement.order[at];
     const slot = arrangement.slots[i];
+    if (!slot) continue;
     if (x >= slot.x && x <= slot.x + slot.width && y >= slot.y && y <= slot.y + slot.height) {
       return i;
     }
@@ -445,10 +560,12 @@ export const slotAt = (arrangement: Arrangement, x: number, y: number) => {
 export const fittedCanvas = (layout: CanvasLayout, arrangement: Arrangement) => {
   const placed = arrangement.slots.filter((slot) => slot.id);
   if (!placed.length) return null;
-  const minX = Math.min(...placed.map((s) => s.x));
-  const minY = Math.min(...placed.map((s) => s.y));
-  const width = Math.max(...placed.map((s) => s.x + s.width)) - minX;
-  const height = Math.max(...placed.map((s) => s.y + s.height)) - minY;
+  // Cards reach past their images, and stay whole.
+  const grow = arrangement.cards?.pad ?? 0;
+  const minX = Math.min(...placed.map((s) => s.x)) - grow;
+  const minY = Math.min(...placed.map((s) => s.y)) - grow;
+  const width = Math.max(...placed.map((s) => s.x + s.width)) + grow - minX;
+  const height = Math.max(...placed.map((s) => s.y + s.height)) + grow - minY;
   const share = layout.scale / 100;
   const pad = ((1 - share) / (2 * share)) * Math.min(width, height);
   return {
@@ -456,6 +573,41 @@ export const fittedCanvas = (layout: CanvasLayout, arrangement: Arrangement) => 
     width: Math.round(width + pad * 2),
     height: Math.round(height + pad * 2),
   };
+};
+
+/**
+ * Width over height of the canvas the images fill best in this layout, with the even
+ * padding Fit canvas leaves. Empty slots count as the average of the filled ones, or
+ * as 16:9, the shape of most screenshots.
+ */
+export const idealRatio = (layout: CanvasLayout, elements: readonly LayerElement[]) => {
+  const def = layoutOf(layout.id);
+  const known = layout.slots.map((slot) => {
+    const el = elements.find((element) => element.id === slot.id);
+    return el?.type === "image" ? ratioOf(el) : null;
+  });
+  const filled = known.filter((ratio): ratio is number => ratio !== null);
+  const usual = filled.length ? filled.reduce((sum, r) => sum + r, 0) / filled.length : 16 / 9;
+  const each = known.map((ratio) => ratio ?? usual);
+  const average = each.reduce((sum, r) => sum + r, 0) / Math.max(each.length, 1);
+  // Gaps, against the images' height (a row) or width (a column).
+  const gaps = (Math.max(each.length, 1) - 1) * (layout.spacing / 100) * 0.12;
+
+  let content = average;
+  if (def?.kind === "row") content = each.reduce((sum, r) => sum + r, 0) + gaps;
+  else if (def?.kind === "column") content = 1 / (each.reduce((sum, r) => sum + 1 / r, 0) + gaps);
+  else if (def?.grid) content = (def.grid.cols / def.grid.rows) * average;
+
+  const share = layout.scale / 100;
+  const pad = ((1 - share) / (2 * share)) * Math.min(content, 1);
+  return (content + pad * 2) / (1 + pad * 2);
+};
+
+/** The post sizes closest in shape to what the layout and its images want, best first. */
+export const suitedSizes = (layout: CanvasLayout, elements: readonly LayerElement[], count = 3) => {
+  const ideal = idealRatio(layout, elements);
+  const off = (size: { width: number; height: number }) => Math.abs(Math.log(size.width / size.height / ideal));
+  return [...POST_SIZES].sort((a, b) => off(a) - off(b)).slice(0, count);
 };
 
 /* ------------------------------------------------------------------------ */
@@ -489,7 +641,7 @@ export const settleLayout = (
       }
     : layout;
 
-  const { slots } = arrangeLayout(nextLayout, elements, canvas);
+  const { slots, order } = arrangeLayout(nextLayout, elements, canvas);
   let changed = false;
   let nextElements = elements.map((el) => {
     const place = slots.find((slot) => slot.id === el.id);
@@ -514,8 +666,8 @@ export const settleLayout = (
     };
   });
 
-  // Slot order among the positions those images already hold, so marks stay on top.
-  const slotted = slots.flatMap((slot) => (slot.id ? [slot.id] : []));
+  // Stacking order among the positions those images already hold, so marks stay on top.
+  const slotted = order.flatMap((i) => (slots[i]?.id ? [slots[i].id as string] : []));
   const held = nextElements.flatMap((el, i) => (slotted.includes(el.id) ? [i] : []));
   const byId = new Map(nextElements.map((el) => [el.id, el]));
   if (held.some((index, order) => nextElements[index].id !== slotted[order])) {

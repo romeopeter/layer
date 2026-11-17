@@ -6,43 +6,22 @@ import { useEditor } from "@/store/editor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { PLATFORMS, sizeName } from "@/lib/canvasSizes";
 
 interface Props {
   onClose: () => void;
 }
 
-interface Platform {
-  name: string;
-  icon: ReactNode;
-  sizes: [label: string, w: number, h: number][];
-}
-
-const PLATFORMS: Platform[] = [
-  { name: "Instagram", icon: <Instagram className="h-3 w-3" />, sizes: [
-    ["Post (Square)", 1080, 1080], ["Story", 1080, 1920], ["Reel Cover", 1080, 1920], ["Carousel", 1080, 1350],
-  ]},
-  { name: "Twitter / X", icon: <Twitter className="h-3 w-3" />, sizes: [
-    ["In-stream", 1600, 900], ["Card", 1200, 628], ["Header", 1500, 500],
-  ]},
-  { name: "Bluesky", icon: <Sparkles className="h-3 w-3" />, sizes: [
-    ["Post", 1200, 675], ["Profile", 3000, 1000],
-  ]},
-  { name: "LinkedIn", icon: <Linkedin className="h-3 w-3" />, sizes: [
-    ["Post", 1200, 1200], ["Article", 1920, 1080], ["Banner", 1584, 396],
-  ]},
-  { name: "Facebook", icon: <Facebook className="h-3 w-3" />, sizes: [
-    ["Post", 1200, 630], ["Cover", 820, 312],
-  ]},
-  { name: "YouTube", icon: <Youtube className="h-3 w-3" />, sizes: [
-    ["Thumbnail", 1280, 720], ["Channel art", 2560, 1440],
-  ]},
-  { name: "Dribbble", icon: <Dribbble className="h-3 w-3" />, sizes: [
-    ["Shot", 1600, 1200], ["Hi-res", 2400, 1800],
-  ]},
-  { name: "Product Hunt", icon: <Globe className="h-3 w-3" />, sizes: [
-    ["Gallery", 2400, 1350], ["Thumbnail", 240, 240],
-  ]},
-];
+const ICONS: Record<string, ReactNode> = {
+  Instagram: <Instagram className="h-3 w-3" />,
+  "Twitter / X": <Twitter className="h-3 w-3" />,
+  Bluesky: <Sparkles className="h-3 w-3" />,
+  LinkedIn: <Linkedin className="h-3 w-3" />,
+  Facebook: <Facebook className="h-3 w-3" />,
+  YouTube: <Youtube className="h-3 w-3" />,
+  Dribbble: <Dribbble className="h-3 w-3" />,
+  "Product Hunt": <Globe className="h-3 w-3" />,
+};
 
 export const CanvasSizePicker = ({ onClose }: Props) => {
   const canvas = useEditor((s) => s.canvas);
@@ -63,19 +42,20 @@ export const CanvasSizePicker = ({ onClose }: Props) => {
           <div key={p.name} className="min-h-[160px] bg-panel px-3.5 py-3">
             <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold text-text">
               <span className="flex h-5 w-5 items-center justify-center rounded bg-p-200/10 text-p-200">
-                {p.icon}
+                {ICONS[p.name]}
               </span>
               <span>{p.name}</span>
             </div>
             <div className="flex flex-col gap-px">
-              {p.sizes.map(([label, width, height]) => {
+              {p.sizes.map((size) => {
+                const { label, width, height } = size;
                 const dim = `${width} × ${height}`;
                 const active = current === dim;
                 return (
                   <button
                     key={label}
                     type="button"
-                    onClick={() => apply(`${p.name} ${label}`, width, height)}
+                    onClick={() => apply(sizeName(p, size), width, height)}
                     className={cn(
                       "flex items-center justify-between rounded px-1.5 py-1 text-left text-[11.5px] transition-colors",
                       active

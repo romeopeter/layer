@@ -6,6 +6,7 @@ import { objectPoseAt, type ObjectPose } from "./objects";
 import { backgroundCanMove } from "./normalise";
 import { releaseTiltPictures } from "@/lib/tiltRender";
 import { resumeGifs, showGifsAt } from "@/lib/gif/player";
+import { cardIdOf } from "@/lib/layouts";
 
 /**
  * Puts the canvas in its pose at a moment of the animation, straight onto the
@@ -106,6 +107,10 @@ const placeAttrs = (el: LayerElement, pose: ObjectPose) => {
   };
 };
 
+/** An object's nodes: its own, and the card behind it in a layout, which moves with it. */
+const nodesOf = (stage: Konva.Stage, id: string) =>
+  [stage.findOne(`#${id}`), stage.findOne(`#${cardIdOf(id)}`)].filter((node) => !!node);
+
 /** Nodes posed since the last rest, so resting puts back only what moved. */
 const posed = new Set<string>();
 
@@ -126,13 +131,14 @@ export const poseStage = async (stage: Konva.Stage, scene: MotionScene, t: numbe
   const unit = Math.min(canvas.width, canvas.height);
   const moving = new Set<string>();
   scene.elements.forEach((el, index) => {
-    const node = stage.findOne(`#${el.id}`);
-    if (!node) return;
+    const nodes = nodesOf(stage, el.id);
+    if (!nodes.length) return;
     const canTilt = el.type === "image" && !el.deviceFrame;
     const pose = objectPoseAt(el, motion, t, { unit, index, canTilt });
     if (!pose) return;
     moving.add(el.id);
-    node.setAttrs(placeAttrs(el, pose));
+    const attrs = placeAttrs(el, pose);
+    nodes.forEach((node) => node.setAttrs(attrs));
     objectPainters.get(el.id)?.(pose, options);
   });
 
@@ -140,7 +146,7 @@ export const poseStage = async (stage: Konva.Stage, scene: MotionScene, t: numbe
   for (const id of posed) {
     if (moving.has(id)) continue;
     const el = scene.elements.find((entry) => entry.id === id);
-    if (el) stage.findOne(`#${id}`)?.setAttrs(restAttrs(el));
+    if (el) nodesOf(stage, id).forEach((node) => node.setAttrs(restAttrs(el)));
     objectPainters.get(id)?.(null, options);
   }
   posed.clear();
@@ -158,7 +164,7 @@ export const restStage = (stage: Konva.Stage, scene: MotionScene, options: PoseO
   stage.findOne(`.${BACKGROUND_CAMERA_NAME}`)?.setAttrs(identity);
   for (const id of posed) {
     const el = scene.elements.find((entry) => entry.id === id);
-    if (el) stage.findOne(`#${id}`)?.setAttrs(restAttrs(el));
+    if (el) nodesOf(stage, id).forEach((node) => node.setAttrs(restAttrs(el)));
     objectPainters.get(id)?.(null, options);
   }
   posed.clear();

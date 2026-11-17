@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Stage, Layer, Transformer, Group } from "react-konva";
 import Konva from "konva";
 import { useEditor } from "../../store/editor";
@@ -6,7 +6,7 @@ import { Background } from "./Background";
 import { ImageNode } from "./ImageNode";
 import { TextNode } from "./TextNode";
 import { ShapeNode } from "./ShapeNode";
-import { LayoutDecorNodes, LayoutSlotsLayer } from "./LayoutOverlay";
+import { LayoutDecorNodes, LayoutSlotsLayer, SlotCard } from "./LayoutOverlay";
 import { useLayoutDrag } from "./useLayoutDrag";
 import { usePictureDrag } from "./usePictureDrag";
 import { SelectionToolbar } from "./SelectionToolbar";
@@ -22,7 +22,8 @@ import { CROP_LAYER_NAME, CropOverlay, type CropOverlayHandle } from "./CropOver
 import { boundsOf, CONTENT_LAYER_NAME, snapCandidatesFor } from "./snapCandidates";
 import { useMarkPlacement } from "./useMarkPlacement";
 import { setStage } from "./stageRef";
-import { arrangeLayout } from "@/lib/layouts";
+import { arrangeLayout, DEFAULT_CARD_FILL } from "@/lib/layouts";
+import type { CardFill } from "@/types";
 import {
   computeSnap,
   resizeSnapResult,
@@ -415,6 +416,16 @@ export const CanvasStage = () => {
     [layout, elements, canvas],
   );
 
+  // Each image in a layout with cards, and its card's fill (which stays with the slot).
+  const cardFills = useMemo(() => {
+    if (!layout?.cards.show) return null;
+    const fills = new Map<string, CardFill>();
+    layout.slots.forEach((slot, i) => {
+      if (slot.id) fills.set(slot.id, layout.cards.fills[i] ?? DEFAULT_CARD_FILL);
+    });
+    return fills;
+  }, [layout]);
+
   // A slot decides where an image goes and how big it is, so there's nothing to drag.
   const selectionInLayout = !!layout?.slots.some(
     (slot) => slot.id && selectedIds.includes(slot.id),
@@ -578,13 +589,26 @@ export const CanvasStage = () => {
               const isSelected = selectedIds.includes(el.id);
 
               if (el.type === "image") {
+                // A card goes just under its own image, so overlapping cards stack with them.
+                const fill = cardFills?.get(el.id);
                 return (
-                  <ImageNode
-                    key={el.id}
-                    el={el}
-                    selected={isSelected}
-                    onSelect={onSelect(el.id)}
-                  />
+                  <Fragment key={el.id}>
+                    {fill && arrangement?.cards && (
+                      <SlotCard
+                        key="card"
+                        el={el}
+                        pad={arrangement.cards.pad}
+                        radius={arrangement.cards.radius}
+                        fill={fill}
+                      />
+                    )}
+                    <ImageNode
+                      key="image"
+                      el={el}
+                      selected={isSelected}
+                      onSelect={onSelect(el.id)}
+                    />
+                  </Fragment>
                 );
               }
 

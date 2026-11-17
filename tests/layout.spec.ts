@@ -539,3 +539,295 @@ test("Layout is under Design, and Position explains itself in a layout", async (
   await openSection(page, "Position & size");
   await expect(page.getByText("Its place comes from the layout.", { exact: false })).toBeVisible();
 });
+
+/* ------------------------------------------------------------------------------------------ */
+
+const panel = (page: Page) => page.getByRole("complementary", { name: "Panel" });
+
+/** Pixels of a still export at scale 1, in canvas pixels. */
+const exportPixels = (page: Page, points: [number, number][]) =>
+  page.evaluate<number[][]>(`(async () => {
+    const url = await X.renderCanvasDataURL("png", 1);
+    const image = new Image();
+    image.src = url;
+    await image.decode();
+    const c = document.createElement("canvas");
+    c.width = image.width;
+    c.height = image.height;
+    const g = c.getContext("2d");
+    g.drawImage(image, 0, 0);
+    return ${JSON.stringify(points)}.map(([x, y]) => Array.from(g.getImageData(Math.round(x), Math.round(y), 1, 1).data));
+  })()`);
+
+/** The divider lines on the canvas, as their points. */
+const dividers = (page: Page) =>
+  page.evaluate<number[][]>(`ST().findOne(".content").find("Line").filter((l) => l.points().length === 4).map((l) => l.points())`);
+
+const near = (a: number[], b: number[], slack = 24) => b.every((value, i) => Math.abs(a[i] - value) <= slack);
+const centreOf = (img: Img) => ({ x: img.x + img.width / 2, y: img.y + img.height / 2 });
+
+test.describe("divider", () => {
+  test("sits in the middle of each gap, as long as the images, and exports", async ({ page }) => {
+    await openApp(page, "Layout");
+    await addImages(page, [[800, 600, "#a33"], [800, 600, "#33a"]]);
+    await pick(page, "Side by side");
+    await page.evaluate(`S.getState().updateLayout({ spacing: 60 })`);
+    expect(await dividers(page)).toEqual([]);
+
+    await panel(page).getByRole("radio", { name: "Dashed", exact: true }).click();
+    await panel(page).getByLabel("Divider color").fill("#00ff00");
+    expect(await page.evaluate(`S.getState().layout.divider`)).toEqual({ style: "dashed", color: "#00ff00", width: 3 });
+
+    const [a, b] = await images(page);
+    const [line] = await dividers(page);
+    const x = (a.x + a.width + b.x) / 2;
+    expect(line[0]).toBeCloseTo(x, 3);
+    expect(line[2]).toBeCloseTo(x, 3);
+    expect(line[1]).toBeCloseTo(Math.min(a.y, b.y), 3);
+    expect(line[3]).toBeCloseTo(Math.max(a.y + a.height, b.y + b.height), 3);
+
+    await panel(page).getByRole("radio", { name: "Solid", exact: true }).click();
+    await page.evaluate(`S.getState().updateLayout({ divider: { ...S.getState().layout.divider, width: 10 } })`);
+    const [[r, g, bl]] = await exportPixels(page, [[x, a.y + a.height / 2]]);
+    expect(near([r, g, bl], [0, 255, 0])).toBe(true);
+
+    await pick(page, "Stacked");
+    const [top, bottom] = await images(page);
+    const [across] = await dividers(page);
+    expect(across[1]).toBeCloseTo((top.y + top.height + bottom.y) / 2, 3);
+    expect(across[1]).toBe(across[3]);
+
+    await addImages(page, [[800, 600, "#3a3"]]);
+    await pick(page, "Three in a row");
+    expect(await dividers(page)).toHaveLength(2);
+
+    // The arrow fills that gap.
+    await pick(page, "Arrow between");
+    await expect(panel(page).getByText("DIVIDER")).toHaveCount(0);
+    expect(await dividers(page)).toEqual([]);
+  });
+});
+
+test.describe("cards", () => {
+  test("keep the slots' edges, move the images in, and give each its colour", async ({ page }) => {
+    await openApp(page, "Layout");
+    const [first, second] = await addImages(page, [[800, 600, "#a33"], [800, 600, "#33a"]]);
+    await pick(page, "Side by side");
+    const [a0, b0] = await images(page);
+
+    await panel(page).getByRole("switch", { name: /CARDS/ }).click();
+    await expect.poll(async () => (await images(page))[0].width).toBeLessThan(a0.width - 1);
+    const [a, b] = await images(page);
+    const card = (id: string) =>
+      page.evaluate<{ x: number; width: number; fill: string }>(`(() => {
+        const group = ST().findOne("#card-${id}");
+        const rect = group.findOne("Rect");
+        return { x: group.x() + rect.x(), width: rect.width(), fill: rect.fill() };
+      })()`);
+    const left = await card(first);
+    const right = await card(second);
+    // The cards reach where the images used to.
+    expect(left.x).toBeCloseTo(a0.x, 0);
+    expect(right.x + right.width).toBeCloseTo(b0.x + b0.width, 0);
+    expect(right.x - (left.x + left.width)).toBeCloseTo(b0.x - (a0.x + a0.width), 0);
+    expect(left.x).toBeLessThan(a.x);
+    expect(left.fill).toBe("#FFFFFF");
+
+    // One card, then all of them.
+    await panel(page).getByRole("button", { name: "Card for Image 2" }).click();
+    await panel(page).getByLabel("Card color").fill("#00ff00");
+    let fills = await page.evaluate<{ color: string }[]>(`S.getState().layout.cards.fills`);
+    expect(fills.map((f) => f.color)).toEqual(["#FFFFFF", "#00ff00"]);
+    await panel(page).getByRole("button", { name: "All", exact: true }).click();
+    await panel(page).getByLabel("Card color").fill("#ff0000");
+    fills = await page.evaluate(`S.getState().layout.cards.fills`);
+    expect(fills.map((f) => f.color)).toEqual(["#ff0000", "#ff0000"]);
+
+    // In the export, the padding round an image is its card.
+    await panel(page).getByRole("button", { name: "Card for Image 2" }).click();
+    await panel(page).getByLabel("Card color").fill("#00ff00");
+    const [leftPad, rightPad] = await exportPixels(page, [
+      [(left.x + a.x) / 2, a.y + a.height / 2],
+      [(b.x + b.width + right.x + right.width) / 2, b.y + b.height / 2],
+    ]);
+    expect(near(leftPad, [255, 0, 0])).toBe(true);
+    expect(near(rightPad, [0, 255, 0])).toBe(true);
+
+    // Colours belong to the place: swapping the images leaves them there.
+    await page.evaluate(`S.getState().swapSlots(0, 1)`);
+    await expect.poll(async () => (await card(second)).fill).toBe("#ff0000");
+    expect((await card(first)).fill).toBe("#00ff00");
+
+    // With no padding a card is the image's own size, there for see-through pictures.
+    await page.evaluate(`S.getState().updateLayout({ cards: { ...S.getState().layout.cards, padding: 0 } })`);
+    await expect.poll(async () => (await card(first)).width).toBeCloseTo((await element<Img>(page, first)).width, 3);
+  });
+
+  test("can be a gradient, and move with their image when it's animated", async ({ page }) => {
+    await openApp(page, "Layout");
+    const [first] = await addImages(page, [[800, 600, "#a33"], [800, 600, "#33a"]]);
+    await pick(page, "Side by side");
+    await panel(page).getByRole("switch", { name: /CARDS/ }).click();
+    await panel(page).getByRole("button", { name: "Card for Image 1" }).click();
+    await panel(page).getByRole("radio", { name: "Gradient", exact: true }).click();
+    await page.evaluate(`(() => {
+      const { cards } = S.getState().layout;
+      S.getState().updateLayout({ cards: { ...cards, fills: [{ kind: "gradient", from: "#ff0000", to: "#0000ff", angle: 0 }, cards.fills[1]] } });
+    })()`);
+    await expect(panel(page).getByText("GRADIENT", { exact: true })).toBeVisible();
+
+    const a = (await images(page))[0];
+    const pad = await page.evaluate<number>(`-ST().findOne("#card-${first}").findOne("Rect").x()`);
+    const [start, end] = await exportPixels(page, [
+      [a.x - pad / 2, a.y + a.height / 2],
+      [a.x + a.width + pad / 2, a.y + a.height / 2],
+    ]);
+    expect(start[0]).toBeGreaterThan(start[2]);
+    expect(end[2]).toBeGreaterThan(end[0]);
+
+    await page.evaluate(`(async () => {
+      window.POSE = await import("/src/lib/motion/pose.ts");
+      S.getState().setElementMotion(${JSON.stringify(first)}, { enter: "rise", start: 1, takes: 0.8 });
+      POSE.poseStage(ST(), S.getState(), 1.4, { scale: 1, frame: 0, preview: true });
+    })()`);
+    const posed = await page.evaluate<{ image: number[]; card: number[] }>(`(() => {
+      const of = (node) => [node.x(), node.y(), node.opacity()];
+      return { image: of(ST().findOne("#${first}")), card: of(ST().findOne("#card-${first}")) };
+    })()`);
+    expect(posed.card).toEqual(posed.image);
+    expect(posed.image[1]).toBeGreaterThan(a.y);
+
+    await page.evaluate(`POSE.restStage(ST(), S.getState(), { scale: 1, frame: 0, preview: true })`);
+    expect(await page.evaluate(`ST().findOne("#card-${first}").y()`)).toBeCloseTo(a.y, 3);
+  });
+});
+
+test.describe("overlap", () => {
+  test("brings images closer or further, and In front picks the one on top", async ({ page }) => {
+    await openApp(page, "Layout");
+    const [first, second] = await addImages(page, [[800, 600, "#a33"], [800, 600, "#33a"]]);
+    await pick(page, "Overlap up");
+    await expect(panel(page).getByText("OVERLAP", { exact: true })).toBeVisible();
+    await expect(panel(page).getByText("SPACING", { exact: true })).toHaveCount(0);
+
+    const apart = async () => {
+      const [a, b] = await images(page);
+      return Math.hypot(centreOf(a).x - centreOf(b).x, centreOf(a).y - centreOf(b).y);
+    };
+    const usual = await apart();
+    await page.evaluate(`S.getState().updateLayout({ overlap: 100 })`);
+    const most = await apart();
+    await page.evaluate(`S.getState().updateLayout({ overlap: 0 })`);
+    const least = await apart();
+    expect(most).toBeLessThan(usual);
+    expect(least).toBeGreaterThan(usual);
+
+    const order = () => page.evaluate<string[]>(`S.getState().elements.map((e) => e.id)`);
+    expect(await order()).toEqual([first, second]);
+    await panel(page).getByRole("button", { name: "Image 1", exact: true }).click();
+    await expect.poll(order).toEqual([second, first]);
+    expect(await page.evaluate(`S.getState().layout.front`)).toBe(0);
+
+    // A click where they overlap reaches the one on top.
+    const [a, b] = await images(page);
+    const hit = await page.evaluate<number | null>(`(async () => {
+      const L = await import("/src/lib/layouts.ts");
+      const s = S.getState();
+      return L.slotAt(L.arrangeLayout(s.layout, s.elements, s.canvas), ${(Math.max(a.x, b.x) + Math.min(a.x + a.width, b.x + b.width)) / 2}, ${(Math.max(a.y, b.y) + Math.min(a.y + a.height, b.y + b.height)) / 2});
+    })()`);
+    expect(hit).toBe(0);
+
+    // Being in front belongs to the picture.
+    await page.evaluate(`S.getState().swapSlots(0, 1)`);
+    expect(await page.evaluate(`S.getState().layout.front`)).toBe(1);
+    await expect.poll(order).toEqual([second, first]);
+  });
+
+  test("in a fan, the middle can be in front, with the sides behind it", async ({ page }) => {
+    await openApp(page, "Layout");
+    const ids = await addImages(page, [[800, 600, "#a33"], [800, 600, "#3a3"], [800, 600, "#33a"]]);
+    await pick(page, "Fan");
+    await panel(page).getByRole("button", { name: "Image 2", exact: true }).click();
+    await expect
+      .poll(() => page.evaluate<string[]>(`S.getState().elements.map((e) => e.id)`))
+      .toEqual([ids[0], ids[2], ids[1]]);
+  });
+});
+
+test.describe("canvas size", () => {
+  test("suggests sizes that suit the layout and its images, and sets one in a click", async ({ page }) => {
+    await openApp(page, "Layout");
+    await addImages(page, [[1600, 900, "#a33"], [1600, 900, "#33a"]]);
+    const suggested = () =>
+      panel(page)
+        .getByRole("group", { name: "Suggested sizes" })
+        .getByRole("button")
+        .evaluateAll((buttons) => buttons.map((b) => b.querySelector("span:last-child")?.textContent));
+
+    await pick(page, "Side by side");
+    expect(await suggested()).toEqual(["Twitter / X Card", "Twitter / X In-stream", "Dribbble Shot"]);
+
+    await pick(page, "Stacked");
+    expect(await suggested()).toEqual(["Instagram Post (Portrait)", "Instagram Post (Square)", "Dribbble Shot"]);
+
+    const portrait = panel(page).getByRole("button", { name: /Instagram Post \(Portrait\)/ });
+    await portrait.click();
+    expect(await canvasSize(page)).toMatchObject({ width: 1080, height: 1350, label: "Instagram Post (Portrait)" });
+    await expect(portrait).toHaveAttribute("aria-pressed", "true");
+    // The size picker offers it too, under the same name.
+    expect(await page.evaluate(`(async () => (await import("/src/lib/canvasSizes.ts")).PLATFORMS[0].sizes[1])()`)).toEqual({
+      label: "Post (Portrait)",
+      width: 1080,
+      height: 1350,
+    });
+  });
+});
+
+test.describe("saving the new settings", () => {
+  test("a project keeps them, and an older overlap layout opens looking the same", async ({ page }) => {
+    await openApp(page, "Layout");
+    await addImages(page, [[800, 600, "#a33"], [800, 600, "#3a3"], [800, 600, "#33a"]]);
+    await pick(page, "Cascade");
+    await page.evaluate(`S.getState().updateLayout({ overlap: 40 })`);
+    await page.waitForTimeout(100);
+    const placed = await images(page);
+    await page.evaluate(`S.getState().updateLayout({
+      front: 1,
+      cards: { show: true, padding: 50, corners: 10, fills: [
+        { kind: "solid", color: "#ff0000" },
+        { kind: "gradient", from: "#000000", to: "#ffffff", angle: 90 },
+        { kind: "solid", color: "#00ff00" },
+      ] },
+    })`);
+    const saved = await page.evaluate<string>(`JSON.stringify(S.getState().toProject())`);
+
+    await page.evaluate(`(() => { const s = S.getState(); s.resetProject(); s.loadProject(${saved}); })()`);
+    expect(await page.evaluate(`S.getState().layout`)).toMatchObject({
+      overlap: 40,
+      front: 1,
+      cards: { show: true, padding: 50, corners: 10 },
+      divider: { style: "none" },
+    });
+
+    // From before overlap had a setting: spacing 60 was how far apart they sat.
+    const older = JSON.parse(saved);
+    older.layout.spacing = 60;
+    delete older.layout.overlap;
+    delete older.layout.front;
+    delete older.layout.divider;
+    delete older.layout.cards;
+    await page.evaluate(`(() => { const s = S.getState(); s.resetProject(); s.loadProject(${JSON.stringify(older)}); })()`);
+    expect(await page.evaluate(`S.getState().layout`)).toMatchObject({
+      overlap: 40,
+      cards: { show: false },
+      divider: { style: "none" },
+    });
+    expect(await page.evaluate(`S.getState().layout.cards.fills.length`)).toBe(3);
+    await page.waitForTimeout(100);
+    for (const img of await images(page)) {
+      const before = placed.find((p) => p.id === img.id);
+      expect(img.x).toBeCloseTo(before?.x ?? NaN, 3);
+      expect(img.y).toBeCloseTo(before?.y ?? NaN, 3);
+    }
+  });
+});

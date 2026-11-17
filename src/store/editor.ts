@@ -61,8 +61,8 @@ import { DEFAULT_MARK_STYLES, shapeDefaults } from "../lib/markTools";
 import {
   arrangeLayout,
   fittedCanvas,
-  layoutOf,
   newLayout,
+  normaliseLayout,
   settleLayout,
   withoutLayoutCrop,
 } from "../lib/layouts";
@@ -786,9 +786,11 @@ export const useEditor = create<EditorState>((set, get) => ({
     const { layout } = get();
     if (!layout || !layout.slots[a] || !layout.slots[b]) return;
     const slots = layout.slots.slice();
-    // The focus belongs to the picture it was chosen for, so it moves too.
+    // The focus belongs to the picture it was chosen for, so it moves too, as does
+    // being in front. Card fills and labels belong to the place, so they stay.
     [slots[a], slots[b]] = [slots[b], slots[a]];
-    set({ layout: { ...layout, slots } });
+    const front = layout.front === a ? b : layout.front === b ? a : layout.front;
+    set({ layout: { ...layout, slots, front } });
   },
 
   fillSlot: (index, src, width, height) => {
@@ -1034,10 +1036,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       watermark: normaliseWatermark(project.watermark),
       motion: normaliseMotion(project.motion),
       previewing: false,
-      layout:
-        project.layout && layoutOf(project.layout.id) && Array.isArray(project.layout.slots)
-          ? project.layout
-          : null,
+      layout: normaliseLayout(project.layout),
       selectedIds: [],
     });
     history.reset();
