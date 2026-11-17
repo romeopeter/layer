@@ -21,6 +21,7 @@ import type {
 } from "../types";
 import type { PatternColorPair, PatternConfig } from "../types/pattern";
 import { DEFAULT_PATTERN_CONFIG } from "../types/pattern";
+import { withCarriedColors } from "../lib/patterns/resolveColorPair";
 import type { BackdropLook } from "../types/backdrop";
 import type { BrandKit, BrandKitsFile } from "../types/brand";
 import type { DesignMotion, ElementMotion, EnterMove, ZoomSpot } from "../types/motion";
@@ -308,6 +309,12 @@ interface EditorState {
 }
 
 const FIT_PASSES = 8;
+
+/** A background whose pattern names one of this install's custom pairs, with its colours written in. */
+const carryPatternColors = (background: BackgroundState): BackgroundState => {
+  const pattern = withCarriedColors(background.pattern, useEditor.getState().customPatternPairs);
+  return pattern === background.pattern ? background : { ...background, pattern };
+};
 
 /** Seconds between objects brought in one by one. */
 const STAGGER = 0.2;
@@ -1012,7 +1019,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       },
       // Older files lack whole parts (pattern, backdrop, effects), and keep some
       // settings where they used to live.
-      background: normaliseBackground(project.background, DEFAULT_BACKGROUND),
+      background: carryPatternColors(normaliseBackground(project.background, DEFAULT_BACKGROUND)),
       lookTrails: {},
       elements: project.elements.map(migrateElement).map(withNormalMotion),
       watermark: normaliseWatermark(project.watermark),
@@ -1028,7 +1035,9 @@ export const useEditor = create<EditorState>((set, get) => ({
   },
 
   toProject: () => {
-    const { canvas, background, elements, watermark, layout, motion } = get();
+    const { canvas, elements, watermark, layout, motion } = get();
+    // A custom pattern pair's colours go with the project, so it opens the same anywhere.
+    const background = carryPatternColors(get().background);
     // Fonts that aren't Layer's own go with the project, so it opens the same anywhere.
     const families = new Set(
       elements.flatMap((el) => (el.type === "text" && !isLayerFont(el.fontFamily) ? [el.fontFamily] : [])),

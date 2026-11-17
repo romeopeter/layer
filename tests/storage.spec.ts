@@ -139,3 +139,57 @@ test.describe("brand kit files", () => {
     expect(await page.evaluate(`S.getState().brandKits[0].logos.length`)).toBe(0);
   });
 });
+
+test.describe("custom pattern colours in projects", () => {
+  const pairOf = (page: import("@playwright/test").Page) =>
+    page.evaluate(`(async () => {
+      const r = await import("/src/lib/patterns/resolveColorPair.ts");
+      const s = S.getState();
+      const pair = r.patternPairOf(s.background.pattern, s.customPatternPairs);
+      return { base: pair.base, accent: pair.accent };
+    })()`);
+
+  test("a custom pair's colours go with the project, and stay when the pair is deleted", async ({ page }) => {
+    await openApp(page, "Background");
+    await page.evaluate(`S.getState().setBackground({ mode: "pattern" })`);
+    const id = (await page.evaluate(`S.getState().addCustomPatternPair("#123456", "#FEDCBA")`)) as string;
+    await page.getByRole("button", { name: "#123456 and #FEDCBA" }).click();
+    expect(await page.evaluate(`S.getState().background.pattern`)).toMatchObject({
+      colorPairId: id,
+      colors: { base: "#123456", accent: "#FEDCBA" },
+    });
+
+    const project = await page.evaluate(`S.getState().toProject()`);
+    expect((project as { background: { pattern: { colors: unknown } } }).background.pattern.colors).toEqual({
+      base: "#123456",
+      accent: "#FEDCBA",
+    });
+
+    // Another computer, without the pair: the same colours.
+    await page.evaluate(`S.setState({ customPatternPairs: [] })`);
+    await page.evaluate((p) => (window as unknown as { S: { getState: () => { loadProject: (p: unknown) => void } } }).S.getState().loadProject(p), project);
+    expect(await pairOf(page)).toEqual({ base: "#123456", accent: "#FEDCBA" });
+
+    // Deleting the pair leaves the design as it is.
+    await page.evaluate(`(() => {
+      S.getState().addCustomPatternPair("#123456", "#FEDCBA");
+    })()`);
+    await page.getByRole("button", { name: "#123456 and #FEDCBA" }).hover();
+    await page.getByRole("button", { name: "Delete colour pair" }).click();
+    expect(await page.evaluate(`S.getState().customPatternPairs.length`)).toBe(0);
+    expect(await pairOf(page)).toEqual({ base: "#123456", accent: "#FEDCBA" });
+  });
+
+  test("an older project naming a custom pair takes its colours, here and when saved", async ({ page }) => {
+    await openApp(page);
+    const id = (await page.evaluate(`S.getState().addCustomPatternPair("#0A0B0C", "#F0E0D0")`)) as string;
+    const project = (await page.evaluate(`S.getState().toProject()`)) as { background: Record<string, unknown> };
+    const older = {
+      ...project,
+      background: { ...project.background, mode: "pattern", pattern: { ...(project.background.pattern as object), colorPairId: id, colors: undefined } },
+    };
+    await page.evaluate((p) => (window as unknown as { S: { getState: () => { loadProject: (p: unknown) => void } } }).S.getState().loadProject(p), older);
+    expect(await page.evaluate(`S.getState().background.pattern.colors`)).toEqual({ base: "#0A0B0C", accent: "#F0E0D0" });
+    expect(await pairOf(page)).toEqual({ base: "#0A0B0C", accent: "#F0E0D0" });
+  });
+});

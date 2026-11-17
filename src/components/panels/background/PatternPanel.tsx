@@ -9,6 +9,7 @@ import {
 } from "@/types/pattern";
 import { PATTERN_TILE_ASPECT, patternPreviewUrl } from "@/lib/patterns/generators";
 import { deriveBrandPatternPairs } from "@/lib/patterns/deriveBrandPatternPairs";
+import { withCarriedColors } from "@/lib/patterns/resolveColorPair";
 import { activeKit } from "@/lib/brand/kits";
 import { CURATED_PATTERN_PAIRS } from "@/data/curatedPatternPairs";
 import { LabeledSlider, MutedMini, PanelHelp, SectionLabel } from "../primitives";
@@ -67,8 +68,21 @@ export const PatternPanel = () => {
 
   const onSelectType = (type: PatternType) => setPattern({ type });
 
-  // A swatch replaces any colours Shuffle chose.
+  // A curated swatch replaces any colours Shuffle chose.
   const selectPair = (colorPairId: string) => setPattern({ colorPairId, colors: undefined });
+  // A custom pair's colours go into the pattern, so the project carries them; the id
+  // only says which swatch to show as chosen.
+  const selectCustomPair = (id: string) => {
+    const pair = customPairs.find((entry) => entry.id === id);
+    if (pair) setPattern({ colorPairId: id, colors: { base: pair.base, accent: pair.accent } });
+  };
+  const customSelected =
+    customPairs.find(
+      (pair) =>
+        pair.id === pattern.colorPairId &&
+        pair.base === pattern.colors?.base &&
+        pair.accent === pattern.colors?.accent,
+    )?.id ?? "";
   // A brand pair's colours go into the pattern itself, so the design doesn't need the kit.
   const selectBrandPair = (id: string) => {
     const pair = brandPairs.find((entry) => entry.id === id);
@@ -80,14 +94,15 @@ export const PatternPanel = () => {
 
   const onSaveCustomPair = (base: string, accent: string) => {
     const id = addCustomPatternPair(base, accent);
-    setPattern({ colorPairId: id });
+    setPattern({ colorPairId: id, colors: { base, accent } });
     setPickerOpen(false);
   };
 
+  // The design keeps its colours: a pattern from before pairs carried them takes them now.
   const onDeleteCustomPair = (id: string) => {
+    const carried = withCarriedColors(pattern, customPairs);
+    if (carried !== pattern) setPattern({ colors: carried.colors });
     deleteCustomPatternPair(id);
-    // Don't leave the canvas pointing at a pair that no longer exists.
-    if (pattern.colorPairId === id) setPattern({ colorPairId: CURATED_PATTERN_PAIRS[0].id });
   };
 
   /** Sliders drop the canvas to cheap tiles while held, then snap back on release. */
@@ -144,8 +159,8 @@ export const PatternPanel = () => {
       <ColorPairSwatchGrid
         title="Custom"
         pairs={customPairs}
-        selectedId={selectedPair}
-        onSelect={selectPair}
+        selectedId={customSelected}
+        onSelect={selectCustomPair}
         onDelete={onDeleteCustomPair}
         onAdd={() => setPickerOpen((open) => !open)}
       />
