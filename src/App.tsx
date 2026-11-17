@@ -1,7 +1,15 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { Upload, Minus, Plus, Delete, Command } from "lucide-react";
 import { DEFAULT_BACKGROUND, useEditor, ZOOM_MAX, ZOOM_MIN } from "@/store/editor";
-import { loadBrandKits, loadPatternColors, loadPreferences, loadSavedBackgrounds } from "@/lib/host";
+import {
+  loadBrandKits,
+  loadPatternColors,
+  loadPreferences,
+  loadSavedBackgrounds,
+  onMenu,
+  syncMenu,
+} from "@/lib/host";
+import { runFromKey, runFromMenu, type AppAction } from "@/lib/appActions";
 import { normaliseCustomPairs } from "@/lib/patterns/customPairs";
 import { reducesMotion } from "@/lib/preferences";
 import { cn } from "@/lib/utils";
@@ -22,11 +30,7 @@ import { KeyBadge } from "@/components/ui/key-badge";
 import { importImageFile } from "@/lib/importers";
 import { arrangeLayout, slotAt } from "@/lib/layouts";
 import { getStage } from "@/components/canvas/stageRef";
-import {
-  exportCanvas,
-  copyCanvasToClipboard,
-  renderCanvasDataURL,
-} from "@/lib/exporters";
+import { copyCanvasToClipboard, renderCanvasDataURL } from "@/lib/exporters";
 
 /* ------------------------------------------------------------------------------------------ */
 
@@ -42,6 +46,29 @@ const layoutSlotAt = (clientX: number, clientY: number) => {
     (clientX - box.left) / scale,
     (clientY - box.top) / scale,
   );
+};
+
+/** The menu bar's shortcuts, by key. Each also works on the web. */
+const SHORTCUTS: Record<string, AppAction> = {
+  z: "undo",
+  y: "redo",
+  e: "export-png",
+  s: "save",
+  o: "open",
+  d: "duplicate",
+  a: "select-all",
+  "=": "zoom-in",
+  "+": "zoom-in",
+  "-": "zoom-out",
+  "0": "zoom-fit",
+  ",": "settings",
+};
+const SHIFTED: Record<string, AppAction> = { z: "redo", e: "export" };
+
+const shortcutOf = (e: KeyboardEvent): AppAction | null => {
+  if (!(e.metaKey || e.ctrlKey)) return null;
+  const key = e.key.toLowerCase();
+  return (e.shiftKey ? SHIFTED[key] : undefined) ?? SHORTCUTS[key] ?? null;
 };
 
 export const App = () => {
@@ -71,6 +98,13 @@ export const App = () => {
     void loadPreferences().then((file) => file && useEditor.getState().loadPreferences(file));
     void loadPatternColors().then((list) => useEditor.getState().setCustomPatternPairs(normaliseCustomPairs(list)));
   }, []);
+
+  // The desktop's menu bar runs the same actions as the shortcuts.
+  useEffect(() => onMenu((id) => void runFromMenu(id)), []);
+  const gridOn = useEditor((s) => s.grid.enabled);
+  useEffect(() => {
+    void syncMenu({ darkMode: preferences.theme === "dark", grid: gridOn });
+  }, [preferences.theme, gridOn]);
 
   // The theme and motion are set on the page, where the styles read them.
   useEffect(() => {
@@ -117,17 +151,11 @@ export const App = () => {
             (target as HTMLInputElement).type !== "color"));
       if (inField) return;
 
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+      // The menu bar's shortcuts, which also work on the web, where there's no menu bar.
+      const shortcut = shortcutOf(e);
+      if (shortcut) {
         e.preventDefault();
-        const { undo, redo } = useEditor.getState();
-        if (e.shiftKey) redo();
-        else undo();
-      } else if ((e.metaKey || e.ctrlKey) && e.key === "y") {
-        e.preventDefault();
-        useEditor.getState().redo();
-      } else if ((e.metaKey || e.ctrlKey) && e.key === "e") {
-        e.preventDefault();
-        exportCanvas("png", 2);
+        void runFromKey(shortcut);
       } else if ((e.metaKey || e.ctrlKey) && e.key === "c") {
         if (useEditor.getState().selectedIds.length > 0) {
           e.preventDefault();

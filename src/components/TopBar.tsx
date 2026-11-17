@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { OPEN_EXPORT_EVENT } from "@/lib/appActions";
 import { Undo, Redo, Eye, ChevronDown, Download } from "lucide-react";
 import { useEditor } from "@/store/editor";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,12 @@ export const TopBar = ({ onPreview }: Props) => {
   const [sizePickerOpen, setSizePickerOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const animation = useAnimationExport();
+  // File › Export… in the menu bar opens the same menu.
+  useEffect(() => {
+    const open = () => setExportOpen(true);
+    window.addEventListener(OPEN_EXPORT_EVENT, open);
+    return () => window.removeEventListener(OPEN_EXPORT_EVENT, open);
+  }, []);
 
   return (
     <header

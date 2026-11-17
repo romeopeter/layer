@@ -12,7 +12,7 @@ use tauri::{
     AppHandle,
     ipc::{InvokeBody, Request, Response},
 };
-use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
 /// `.layer` files hold every picture a project uses, so they are legitimately
 /// large. The cap only stops an arbitrary huge file being pulled into memory and
@@ -146,6 +146,22 @@ fn show_error_dialog(app: &AppHandle, message: &str) {
 #[tauri::command]
 pub fn show_error(app: AppHandle, message: String) {
     show_error_dialog(&app, &message);
+}
+
+/// Asks before something that can't be undone, such as starting a new design.
+/// True if the user chose `go`.
+#[tauri::command]
+pub async fn confirm(app: AppHandle, message: String, go: String) -> bool {
+    tauri::async_runtime::spawn_blocking(move || {
+        app.dialog()
+            .message(message)
+            .title("Layer")
+            .kind(MessageDialogKind::Warning)
+            .buttons(MessageDialogButtons::OkCancelCustom(go, "Cancel".into()))
+            .blocking_show()
+    })
+    .await
+    .unwrap_or(false)
 }
 
 /// Takes the finished .layer file (a zip the UI builds) as a raw IPC body, with

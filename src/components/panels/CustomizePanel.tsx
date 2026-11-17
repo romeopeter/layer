@@ -5,10 +5,19 @@ import { KeyBadge } from "@/components/ui/key-badge";
 import { PanelDesc, PanelTitle, SectionLabel, SwitchRow } from "./primitives";
 
 const HOTKEYS = [
-  ["Export", "⌘E"],
+  ["Save", "⌘S"],
+  ["Open", "⌘O"],
+  ["Export PNG", "⌘E"],
+  ["Export…", "⇧⌘E"],
   ["Copy", "⌘C"],
   ["Paste", "⌘V"],
+  ["Duplicate", "⌘D"],
+  ["Select all", "⌘A"],
   ["Undo", "⌘Z"],
+  ["Redo", "⇧⌘Z"],
+  ["Zoom in / out", "⌘= ⌘−"],
+  ["Fit to window", "⌘0"],
+  ["Show grid", "⇧G"],
   ["Delete", "⌫"],
 ];
 

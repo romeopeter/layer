@@ -55,6 +55,40 @@ export const readClipboardImage = async (): Promise<Blob | null> => {
   return bytes && bytes.byteLength > 0 ? new Blob([bytes], { type: "image/png" }) : null;
 };
 
+/** Asks before something that can't be undone. True if the user chose `go`. */
+export const confirmAction = async (message: string, go: string): Promise<boolean> => {
+  if (!isTauri) return window.confirm(message);
+  const { invoke } = await invokeCore();
+  return invoke<boolean>("confirm", { message, go }).catch(() => false);
+};
+
+/**
+ * Calls `handler` with the id of each menu bar item the user chooses. The menu bar is
+ * the desktop's; on the web nothing is ever called. Returns how to stop listening.
+ */
+export const onMenu = (handler: (id: string) => void): (() => void) => {
+  if (!isTauri) return () => {};
+  let stop: (() => void) | null = null;
+  let stopped = false;
+  void import("@tauri-apps/api/event")
+    .then(({ listen }) => listen<string>("menu", (event) => handler(event.payload)))
+    .then((unlisten) => {
+      if (stopped) unlisten();
+      else stop = unlisten;
+    });
+  return () => {
+    stopped = true;
+    stop?.();
+  };
+};
+
+/** Ticks the menu bar's setting items to match the page. */
+export const syncMenu = async (state: { darkMode: boolean; grid: boolean }) => {
+  if (!isTauri) return;
+  const { invoke } = await invokeCore();
+  await invoke("sync_menu", state).catch(() => {});
+};
+
 /** Tells the user something went wrong, for where no panel can show it. */
 export const showError = async (message: string) => {
   if (!isTauri) return window.alert(message);

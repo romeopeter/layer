@@ -5,6 +5,7 @@ mod capture;
 mod clipboard;
 mod files;
 mod fonts;
+mod menu;
 mod pixabay;
 mod saved;
 
@@ -20,6 +21,7 @@ pub fn run() {
                 .ok()
                 .map(|directory| directory.join("pixabay-searches.json"));
             app.manage(pixabay::SearchCache::load(cache_file));
+            menu::install(app.handle())?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -27,6 +29,7 @@ pub fn run() {
             files::save_project,
             files::open_project,
             files::show_error,
+            files::confirm,
             files::export_static,
             fonts::google_font,
             pixabay::search_images,
@@ -38,6 +41,7 @@ pub fn run() {
             brand_assets::store_brand_asset,
             brand_assets::load_brand_asset,
             clipboard::read_clipboard_image,
+            menu::sync_menu,
             saved::load_pattern_colors,
             saved::store_pattern_colors,
             saved::load_preferences,
