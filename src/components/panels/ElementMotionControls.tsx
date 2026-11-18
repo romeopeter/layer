@@ -22,9 +22,6 @@ export const ElementMotionControls = ({ el }: { el: LayerElement }) => {
   const enter = enters.find((move) => move.id === motion.enter) ?? enters[0];
   const keep = keeps.find((move) => move.id === motion.keep) ?? keeps[0];
   const set = (patch: Parameters<typeof setElementMotion>[1]) => setElementMotion(el.id, patch);
-  // A mockup stays flat (as in 3D), so a 3D move does the nearest thing in 2D.
-  const flat =
-    el.type === "image" && !!el.deviceFrame && (enter.id === "turn-in" || keep.id === "swing" || keep.id === "orbit");
 
   return (
     <div className="flex flex-col gap-3">
@@ -82,8 +79,6 @@ export const ElementMotionControls = ({ el }: { el: LayerElement }) => {
         </Select>
         {keep.id !== "none" && <PanelHelp className="my-0">{keep.description}</PanelHelp>}
       </Field>
-
-      {flat && <PanelHelp className="my-0">A mockup stays flat, so 3D moves happen in 2D.</PanelHelp>}
 
       <PanelHelp className="my-0">
         The camera and the clip's length are in

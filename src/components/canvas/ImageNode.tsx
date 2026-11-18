@@ -16,8 +16,10 @@ import {
   screenPathOf,
   sourceOf,
 } from "@/lib/mockups";
-import { isImageTiltActive, parseImageTilt } from "@/lib/tilt";
+import type { LayoutSurface } from "@/lib/layouts";
+import { DEFAULT_IMAGE_TILT } from "@/lib/tilt";
 import { isTiltSupported, renderTilt, tiltBoxOf, tiltCorners, type TiltLook } from "@/lib/tiltRender";
+import { imageTurnOf, turnedFurther, type ImageTurn } from "@/lib/turn";
 import { registerObjectPainter } from "@/lib/motion/pose";
 import { sameNodeProps } from "./nodeProps";
 import { BrowserBack, BrowserFront } from "./BrowserFrame";
@@ -25,6 +27,8 @@ import { useEditedImage } from "./useEditedImage";
 import { useGifFrames } from "./useGifFrames";
 import { useAltHeld } from "./usePictureDrag";
 import { WindowBack, WindowFront } from "./WindowFrame";
+import { FLAT_MOCKUP_NAME } from "./flatMockup";
+import { useTurnedMockup } from "./useTurnedMockup";
 
 /* ----------------------------------------------------------------- */
 
@@ -32,6 +36,8 @@ interface Props {
   el: ImageElement;
   selected: boolean;
   onSelect: (e: Konva.KonvaEventObject<MouseEvent>) => void;
+  /** Its layout's, when the layout is tilted as one surface. */
+  surface?: LayoutSurface | null;
 }
 
 const shadowProps = (el: ImageElement) =>
@@ -87,32 +93,35 @@ const drawCropped = (frame: HTMLCanvasElement, crop: NonNullable<ReturnType<type
   g?.drawImage(frame, crop.x * frame.width, crop.y * frame.height, width, height, 0, 0, width, height);
 };
 
-/** The look of an image's tilt, turned further by an animation's pose. */
-const tiltLookOf = (el: ImageElement, turnX = 0, turnY = 0): TiltLook => {
-  const tilt = parseImageTilt(el.transform);
+/** The look of an image turned, further still by an animation's pose. */
+const tiltLookOf = (el: ImageElement, turn: ImageTurn | null, turnX = 0, turnY = 0): TiltLook => {
+  const { tilt, plane } = turnedFurther(turn ?? { tilt: { ...DEFAULT_IMAGE_TILT } }, turnX, turnY);
   return {
-    tilt: { ...tilt, tiltX: tilt.tiltX + turnX, tiltY: tilt.tiltY + turnY },
+    tilt,
     width: el.width,
     height: el.height,
     cornerRadius: el.cornerRadius,
     border: el.border?.enabled ? el.border : null,
+    plane,
   };
 };
 
 /**
- * The picture drawn tilted, and where it goes, when the image has a 3D tilt and
- * no frame. Null otherwise. Kept in step with every change to the image.
+ * The picture drawn tilted, and where it goes, when the image is turned in 3D (by its
+ * own tilt or its layout's) and has no frame. Null otherwise. Kept in step with every
+ * change to the image.
  */
 const useTiltedPicture = (
   el: ImageElement,
   source: TexImageSource | null,
+  turn: ImageTurn | null,
   onDraw: () => void,
 ) => {
-  const active = !el.deviceFrame && isImageTiltActive(el.transform) && isTiltSupported();
+  const active = !el.deviceFrame && !!turn && isTiltSupported();
   const out = useMemo(() => document.createElement("canvas"), []);
   const look = useMemo(
-    () => tiltLookOf(el),
-    [el.transform, el.width, el.height, el.cornerRadius, el.border], // eslint-disable-line react-hooks/exhaustive-deps -- only these feed it
+    () => tiltLookOf(el, turn),
+    [turn, el.width, el.height, el.cornerRadius, el.border], // eslint-disable-line react-hooks/exhaustive-deps -- only these feed it
   );
   // Where the tilted picture goes, worked out from the tilt alone.
   const box = useMemo(() => tiltBoxOf(tiltCorners(look)), [look]);
@@ -141,7 +150,9 @@ const useTiltedPicture = (
   return active ? { canvas: out, box, redraw } : null;
 };
 
-const ImageNodeBody = ({ el, onSelect }: Props) => {
+const ImageNodeBody = ({ el, onSelect, surface }: Props) => {
+  // How it's turned in 3D, if at all: by its own tilt, or with its tilted layout.
+  const turn = useMemo(() => imageTurnOf(el, surface), [el, surface]);
   const [img] = useImage(el.src, "anonymous");
   const frame = el.deviceFrame;
   const usesArt = !!frame && hasArtwork(frame);
@@ -179,11 +190,18 @@ const ImageNodeBody = ({ el, onSelect }: Props) => {
   // A cropped GIF's texture is the visible part of each frame, drawn again as it changes.
   const gifCrop = useMemo(() => document.createElement("canvas"), []);
   const texture: TexImageSource | null = gif ? (crop ? gifCrop : gif.canvas) : stillTexture;
-  const tilted = useTiltedPicture(el, texture, () => pictureRef.current?.getLayer()?.batchDraw());
+  const tilted = useTiltedPicture(el, texture, turn, () => pictureRef.current?.getLayer()?.batchDraw());
+  // A mockup turned in 3D: drawn from its own flat group, which it shows in place of.
+  const flatRef = useRef<Konva.Group>(null);
+  const turnedRef = useRef<Konva.Image>(null);
+  const turned = useTurnedMockup(el, flatRef, !!img && !!picture && (!usesArt || !!art), picture, turn, () =>
+    turnedRef.current?.getLayer()?.batchDraw(),
+  );
   useEffect(() => {
     onGifFrame.current = () => {
       if (gif && crop) drawCropped(gif.canvas, crop, gifCrop);
       if (tilted) tilted.redraw();
+      else if (turned.shown) turned.redraw();
       else pictureRef.current?.getLayer()?.batchDraw();
     };
   });
@@ -193,34 +211,44 @@ const ImageNodeBody = ({ el, onSelect }: Props) => {
     if (gifCanvas) onGifFrame.current();
   }, [gifCanvas]);
 
-  // An animation can turn the picture in 3D, flat or not: drawn into a picture of its own.
+  // An animation can turn the picture or mockup in 3D, flat or not: drawn into a picture
+  // of its own.
   const posedRef = useRef<Konva.Image>(null);
   const posedCanvas = useMemo(() => document.createElement("canvas"), []);
-  const latest = useRef({ el, texture, animated: !!gif });
+  const turnedShown = turned.shown && !cropping;
+  const flatVisible = !cropping && !turnedShown;
+  const latest = useRef({ el, turn, texture, animated: !!gif, posePicture: turned.pose, flatVisible });
   useEffect(() => {
-    latest.current = { el, texture, animated: !!gif };
+    latest.current = { el, turn, texture, animated: !!gif, posePicture: turned.pose, flatVisible };
   });
   useEffect(
     () =>
       registerObjectPainter(el.id, (pose, options) => {
         const posed = posedRef.current;
-        const shown = pictureRef.current;
-        const border = shown?.getParent()?.findOne(".picture-border");
-        const { el: now, texture: source, animated } = latest.current;
-        const turning = !!pose && (pose.tiltX !== 0 || pose.tiltY !== 0) && !!source && !!posed && isTiltSupported();
+        const { el: now, turn: how, texture: source, animated, posePicture, flatVisible: flatShows } = latest.current;
+        const framed = !!now.deviceFrame;
+        const shown = framed ? turnedRef.current : pictureRef.current;
+        const flat = framed ? flatRef.current : null;
+        const border = framed ? null : shown?.getParent()?.findOne(".picture-border");
+        const turning =
+          !!pose && (pose.tiltX !== 0 || pose.tiltY !== 0) && (framed || !!source) && !!posed && isTiltSupported();
         if (!turning) {
           posed?.visible(false);
           shown?.visible(true);
+          flat?.visible(flatShows);
           border?.visible(true);
           return;
         }
         // A still picture is turned again every frame, so it stays on the GPU meanwhile;
         // a GIF's changes with every frame, so it's sent each time.
         const scale = options.preview ? 1 : Math.max(TILT_SCALE, options.scale);
-        const box = renderTilt(source, tiltLookOf(now, pose.tiltX, pose.tiltY), scale, posedCanvas, !animated);
+        const box = framed
+          ? posePicture(pose.tiltX, pose.tiltY, scale, posedCanvas, animated)
+          : source && renderTilt(source, tiltLookOf(now, how, pose.tiltX, pose.tiltY), scale, posedCanvas, !animated);
         if (!box) return;
         posed.setAttrs({ image: posedCanvas, ...box, visible: true });
         shown?.visible(false);
+        flat?.visible(false);
         border?.visible(false);
       }),
     [el.id, posedCanvas],
@@ -351,6 +379,20 @@ const ImageNodeBody = ({ el, onSelect }: Props) => {
     </Group>
   );
 
+  // Turned in 3D, it shows a drawing of itself; the flat mockup stays, hidden, as what
+  // that drawing is made from.
+  const turnedNodes = (
+    <>
+      {/* The element's own box, for selecting and handles; the turn can spill past it. */}
+      {turnedShown && <Rect width={el.width} height={el.height} opacity={0} />}
+      {turnedShown && turned.box && (
+        <KImage ref={turnedRef} name="turned-mockup" image={turned.canvas} {...turned.box} listening={false} {...sp} />
+      )}
+      {/* Hidden unless an animation is turning the mockup. See the painter above. */}
+      <KImage ref={posedRef} name="posed-picture" image={posedCanvas} visible={false} listening={false} {...sp} />
+    </>
+  );
+
   if (usesArt && art) {
     // Drawn twice: a shadow cast by the frame would otherwise fall across the screen.
     const artProps = isFrameTurned(frame)
@@ -358,11 +400,12 @@ const ImageNodeBody = ({ el, onSelect }: Props) => {
       : { width: el.width, height: el.height };
     return (
       <Group {...nodeProps}>
-        <Group visible={!cropping}>
+        <Group ref={flatRef} name={FLAT_MOCKUP_NAME} visible={flatVisible}>
           {el.shadow?.enabled && <KImage image={art} {...artProps} {...sp} listening={false} />}
           {pictureNodes}
           <KImage name="mockup-frame" image={art} {...artProps} />
         </Group>
+        {turnedNodes}
       </Group>
     );
   }
@@ -370,7 +413,7 @@ const ImageNodeBody = ({ el, onSelect }: Props) => {
   const isBrowser = !!browserLookOf(frame);
   return (
     <Group {...nodeProps}>
-      <Group visible={!cropping}>
+      <Group ref={flatRef} name={FLAT_MOCKUP_NAME} visible={flatVisible}>
         {isBrowser ? (
           <BrowserBack el={el} frame={frame} shadow={sp} path={path} />
         ) : (
@@ -383,6 +426,7 @@ const ImageNodeBody = ({ el, onSelect }: Props) => {
           <WindowFront el={el} frame={frame} path={path} />
         )}
       </Group>
+      {turnedNodes}
     </Group>
   );
 };

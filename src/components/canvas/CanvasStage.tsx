@@ -22,7 +22,7 @@ import { CROP_LAYER_NAME, CropOverlay, type CropOverlayHandle } from "./CropOver
 import { boundsOf, CONTENT_LAYER_NAME, snapCandidatesFor } from "./snapCandidates";
 import { useMarkPlacement } from "./useMarkPlacement";
 import { setStage } from "./stageRef";
-import { arrangeLayout, DEFAULT_CARD_FILL } from "@/lib/layouts";
+import { arrangeLayout, DEFAULT_CARD_FILL, layoutSurfaceOf, type LayoutSurface } from "@/lib/layouts";
 import type { CardFill } from "@/types";
 import {
   computeSnap,
@@ -416,6 +416,15 @@ export const CanvasStage = () => {
     [layout, elements, canvas],
   );
 
+  // A tilted layout turns as one surface. Kept the same object until it changes, since
+  // every image in the layout is drawn again when it does.
+  const surfaceKey = useMemo(() => {
+    const surface = layout && arrangement ? layoutSurfaceOf(layout, arrangement) : null;
+    return surface ? JSON.stringify(surface) : null;
+  }, [layout, arrangement]);
+  const surface = useMemo<LayoutSurface | null>(() => (surfaceKey ? JSON.parse(surfaceKey) : null), [surfaceKey]);
+  const laidOut = useMemo(() => new Set(layout?.slots.flatMap((slot) => (slot.id ? [slot.id] : [])) ?? []), [layout]);
+
   // Each image in a layout with cards, and its card's fill (which stays with the slot).
   const cardFills = useMemo(() => {
     if (!layout?.cards.show) return null;
@@ -600,6 +609,7 @@ export const CanvasStage = () => {
                         pad={arrangement.cards.pad}
                         radius={arrangement.cards.radius}
                         fill={fill}
+                        surface={surface}
                       />
                     )}
                     <ImageNode
@@ -607,6 +617,7 @@ export const CanvasStage = () => {
                       el={el}
                       selected={isSelected}
                       onSelect={onSelect(el.id)}
+                      surface={laidOut.has(el.id) ? surface : null}
                     />
                   </Fragment>
                 );
@@ -637,7 +648,7 @@ export const CanvasStage = () => {
               return null;
             })}
 
-            {arrangement && <LayoutDecorNodes arrangement={arrangement} />}
+            {arrangement && <LayoutDecorNodes arrangement={arrangement} surface={surface} />}
             </Group>
 
             {/* Transform handles for selected elements */}

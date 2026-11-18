@@ -6,6 +6,7 @@ import { openLayerFile } from "./importers";
 import { packProject } from "./projectFile";
 import { prepareExportTiles } from "./export/prepareExportTiles";
 import { prepareExportBackdrop } from "./export/prepareExportBackdrop";
+import { whenTurnedDrawn } from "./devices3d";
 import { GRID_LAYER_NAME } from "../components/canvas/GridOverlay";
 import { SNAP_GUIDES_LAYER_NAME } from "../components/canvas/SnapGuides";
 import { MARK_DRAFT_LAYER_NAME } from "../components/canvas/MarkDraft";
@@ -94,6 +95,8 @@ export const renderCanvasDataURL = (
   return withOverlaysHidden(stage, options, async () => {
     // Text in a font still loading would export in a stand-in.
     await document.fonts.ready;
+    // A mockup turned in 3D for the first time is drawn once three.js has loaded.
+    await whenTurnedDrawn();
     // The stage is scaled to fit, and the pixelRatio below compensates for that,
     // so the background pattern is rasterized at `pixelRatio` device pixels per
     // canvas unit regardless of the current zoom.

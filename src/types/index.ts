@@ -65,6 +65,8 @@ export interface DeviceFrame {
   roundness: number;
   /** What a browser shows in its address bar. */
   address: string;
+  /** How far a laptop's lid is open in 3D, in degrees. Its usual when unset. */
+  lidAngle?: number;
 }
 
 export interface BaseElement {
@@ -346,6 +348,15 @@ export interface LayoutCards {
   fills: CardFill[];
 }
 
+/** A whole layout tilted in 3D as one surface: the same angles as an image's 3D tilt. */
+export interface LayoutTilt {
+  tiltX: number;
+  tiltY: number;
+  tiltZ: number;
+  perspective: number;
+  innerShadow: boolean;
+}
+
 /** Images in `slots` follow this: their place and size are worked out, not set by hand. */
 export interface CanvasLayout {
   id: LayoutId;
@@ -365,6 +376,8 @@ export interface CanvasLayout {
   slots: LayoutSlot[];
   divider: LayoutDivider;
   cards: LayoutCards;
+  /** Turns its images, cards and badges together, as one surface. Flat when all angles are 0. */
+  tilt: LayoutTilt;
 }
 
 /** One of nine places on the canvas: the corners, the edges' middles, and the centre. */

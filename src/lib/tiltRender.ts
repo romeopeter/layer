@@ -29,9 +29,11 @@ export interface TiltLook {
   height: number;
   cornerRadius: number;
   border?: { color: string; width: number } | null;
+  /** Turned with others as one surface; its own middle when unset. */
+  plane?: TurnPlane;
 }
 
-interface Corner {
+export interface Corner {
   /** Where it lands, element-local canvas units. */
   x: number;
   y: number;
@@ -48,28 +50,86 @@ interface Corner {
 export const perspectiveOf = (tilt: ImageTilt, width: number, height: number) =>
   (tilt.perspective * Math.max(width, height)) / 720;
 
+/**
+ * A point turned the way CSS turns an element: scaled, then rotateZ, rotateY and rotateX
+ * (CSS applies the rightmost first), about the element's centre. In and out are relative
+ * to that centre, y pointing down and z towards the viewer. Shared with 3D mockups, so
+ * a device turns exactly as a picture does.
+ */
+export const turnPoint = (tilt: ImageTilt, x: number, y: number, z: number, spin = 0) => {
+  const [ax, ay, az, as] = [tilt.tiltX, tilt.tiltY, tilt.tiltZ, spin].map((deg) => (deg * Math.PI) / 180);
+  // A thing drawn turned by `spin` turns with the page's axes, not its own: into the
+  // page's first, and back after.
+  if (as) [x, y] = [x * Math.cos(as) - y * Math.sin(as), x * Math.sin(as) + y * Math.cos(as)];
+  x *= tilt.scale;
+  y *= tilt.scale;
+  z *= tilt.scale;
+  [x, y] = [x * Math.cos(az) - y * Math.sin(az), x * Math.sin(az) + y * Math.cos(az)];
+  [x, z] = [x * Math.cos(ay) + z * Math.sin(ay), -x * Math.sin(ay) + z * Math.cos(ay)];
+  [y, z] = [y * Math.cos(ax) - z * Math.sin(ax), y * Math.sin(ax) + z * Math.cos(ax)];
+  if (as) [x, y] = [x * Math.cos(as) + y * Math.sin(as), -x * Math.sin(as) + y * Math.cos(as)];
+  return { x, y, z };
+};
+
+/**
+ * What something turns about, and the size its perspective follows, element-local: its
+ * own middle and size, or a whole layout's when the layout tilts as one surface.
+ */
+export interface TurnPlane {
+  pivot: { x: number; y: number };
+  span: number;
+  /** How far the thing itself is turned on the page, in degrees, so it turns with the page's axes. */
+  spin?: number;
+  /** Shared with others, as part of a tilted layout. */
+  shared?: boolean;
+}
+
+/**
+ * A surface shared by several things, seen from one of them: a node at `x`, `y`, turned
+ * by `rotation` about that corner. The pivot is in the canvas's units.
+ */
+export const planeFrom = (
+  pivot: { x: number; y: number },
+  span: number,
+  node: { x: number; y: number; rotation: number },
+): TurnPlane => {
+  const angle = (-node.rotation * Math.PI) / 180;
+  const dx = pivot.x - node.x;
+  const dy = pivot.y - node.y;
+  return {
+    pivot: { x: dx * Math.cos(angle) - dy * Math.sin(angle), y: dx * Math.sin(angle) + dy * Math.cos(angle) },
+    span,
+    spin: node.rotation,
+    shared: true,
+  };
+};
+
+/** A thing's own plane: it turns about its middle. */
+export const ownPlane = (width: number, height: number): TurnPlane => ({
+  pivot: { x: width / 2, y: height / 2 },
+  span: Math.max(width, height),
+});
+
+/** Where a turned point lands, seen from `distance` in front of the point it turned about. */
+export const projectPoint = (point: { x: number; y: number; z: number }, distance: number, pivot: { x: number; y: number }): Corner => {
+  // Never at or behind the eye.
+  const w = Math.max(0.05, (distance - point.z) / distance);
+  return { x: pivot.x + point.x / w, y: pivot.y + point.y / w, z: point.z, w };
+};
+
 /** Where the four corners land: top left, top right, bottom left, bottom right. */
 export const tiltCorners = (look: TiltLook): Corner[] => {
   const { tilt, width, height } = look;
-  const p = perspectiveOf(tilt, width, height);
-  const [ax, ay, az] = [tilt.tiltX, tilt.tiltY, tilt.tiltZ].map((deg) => (deg * Math.PI) / 180);
+  const plane = look.plane ?? ownPlane(width, height);
+  const p = (tilt.perspective * plane.span) / 720;
   return [
     [0, 0],
     [1, 0],
     [0, 1],
     [1, 1],
-  ].map(([u, v]) => {
-    // Scale, then rotateZ, rotateY, rotateX: CSS applies the rightmost first.
-    let x = (u - 0.5) * width * tilt.scale;
-    let y = (v - 0.5) * height * tilt.scale;
-    let z = 0;
-    [x, y] = [x * Math.cos(az) - y * Math.sin(az), x * Math.sin(az) + y * Math.cos(az)];
-    [x, z] = [x * Math.cos(ay) + z * Math.sin(ay), -x * Math.sin(ay) + z * Math.cos(ay)];
-    [y, z] = [y * Math.cos(ax) - z * Math.sin(ax), y * Math.sin(ax) + z * Math.cos(ax)];
-    // Never at or behind the eye.
-    const w = Math.max(0.05, (p - z) / p);
-    return { x: width / 2 + x / w, y: height / 2 + y / w, z, w };
-  });
+  ].map(([u, v]) =>
+    projectPoint(turnPoint(tilt, u * width - plane.pivot.x, v * height - plane.pivot.y, 0, plane.spin), p, plane.pivot),
+  );
 };
 
 /** The box the tilted picture fills, element-local. */
@@ -117,11 +177,19 @@ void main() {
   float d = roundBox(q - 0.5 * uSize, 0.5 * uSize, uRadius);
   float aa = max(fwidth(d), 1e-4);
   float alpha = clamp(0.5 - d / aa, 0.0, 1.0);
-  vec3 col = texture(uTex, vUv).rgb;
-  if (uBorder > 0.0) col = mix(col, uBorderColor, clamp(0.5 + (d + uBorder) / aa, 0.0, 1.0));
+  // Premultiplied, so a see-through picture (a mockup's outline, a cut-out PNG) keeps
+  // its shape and its soft edges don't darken.
+  vec4 tex = texture(uTex, vUv);
+  vec3 col = tex.rgb;
+  float cover = tex.a;
+  if (uBorder > 0.0) {
+    float edge = clamp(0.5 + (d + uBorder) / aa, 0.0, 1.0);
+    col = mix(col, uBorderColor, edge);
+    cover = mix(cover, 1.0, edge);
+  }
   // The far side a little darker, as if lit from in front.
   col *= 1.0 - uShade * 0.35 * clamp(vDepth, 0.0, 1.0);
-  outColor = vec4(col * alpha, alpha);
+  outColor = vec4(col * alpha, cover * alpha);
 }`;
 
 const hexToRgb = (hex: string): [number, number, number] => {
@@ -176,6 +244,7 @@ const createRenderer = () => {
   const upload = (target: WebGLTexture | null, picture: TexImageSource) => {
     gl.bindTexture(gl.TEXTURE_2D, target);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, picture);
     gl.generateMipmap(gl.TEXTURE_2D);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
@@ -223,7 +292,7 @@ const createRenderer = () => {
     canvas.width = Math.max(1, Math.round(box.width * scale));
     canvas.height = Math.max(1, Math.round(box.height * scale));
 
-    const reach = Math.max(look.width, look.height) * 0.5 * look.tilt.scale;
+    const reach = (look.plane?.span ?? Math.max(look.width, look.height)) * 0.5 * look.tilt.scale;
     const uvs = [
       [0, 0],
       [1, 0],

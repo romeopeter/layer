@@ -18,6 +18,26 @@ export interface Box {
 interface Finish {
   id: string;
   label: string;
+  /** Its sides and back in 3D, sampled from its artwork. Solid devices only. */
+  color?: string;
+}
+
+/**
+ * How a device is built in 3D: a slab (phones, tablets, watches), a lid on a base
+ * (laptops), or a display on a stand (desktops).
+ */
+export type SolidKind = "slab" | "laptop" | "desktop";
+
+export type ButtonSide = "left" | "right" | "top" | "bottom";
+
+/** A button standing out from a device's side. */
+export interface DeviceButton {
+  side: ButtonSide;
+  /** Where it starts and ends along that side. */
+  from: number;
+  to: number;
+  /** How far it stands out. */
+  out: number;
 }
 
 export interface DeviceDef {
@@ -32,6 +52,20 @@ export interface DeviceDef {
   screen?: Box;
   /** Top left, top right, bottom right, bottom left, as fractions of its width. */
   corners?: number[];
+  /**
+   * Set on a device that turns as a solid in 3D. The rest turn as flat cards. Its body
+   * and buttons are measured from the artwork by `npm run devices:sync`: fractions of
+   * the device, with corners and how far buttons stand out as fractions of its width.
+   */
+  solid?: SolidKind;
+  /** The outline without its buttons; a laptop's lid. */
+  body?: Box & { corners: number[] };
+  buttons?: DeviceButton[];
+  /** A laptop's base: the wider strip below its lid. */
+  base?: Box;
+  /** A desktop's stand, everything below its display; and the foot along its bottom. */
+  stand?: Box;
+  foot?: Box;
 }
 
 /** Everything a frame starts with, and what a project saved before these existed gets. */
@@ -48,6 +82,8 @@ export const FRAME_DEFAULTS = {
 export const ZOOM_MAX = 4;
 export const THICKNESS_MAX = 3;
 export const ROUNDNESS_MAX = 3;
+/** How far a laptop's lid opens in 3D, in degrees: upright, to well back. */
+export const LID_ANGLE = { min: 90, max: 135, usual: 102 };
 
 export interface WindowStyle {
   /** Space around the picture. These are all fractions of the frame's width. */
@@ -151,6 +187,12 @@ export const kindOfDevice = (group?: string) =>
   MOCKUP_KINDS.find((kind) => group && kind.groups.includes(group))?.id ?? MOCKUP_KINDS[0].id;
 
 const deviceOf = (frame: DeviceFrame) => DEVICES.find((device) => device.id === frame.device);
+
+/** Turns in 3D as a solid, with depth and sides, rather than as a flat card. */
+export const hasBody = (frame: DeviceFrame) => !!deviceOf(frame)?.solid;
+
+/** How a device is built in 3D, if it's a solid. */
+export const solidKindOf = (frame: DeviceFrame) => deviceOf(frame)?.solid;
 
 /** A device has a fixed shape and its own artwork. Everything else is drawn. */
 export const hasArtwork = (frame: DeviceFrame) => !!deviceOf(frame)?.width;
@@ -315,6 +357,86 @@ export const screenPathOf = (el: ImageElement, shape: FrameShape): ScreenPath =>
   return { ...box, corners: shape.corners.map((corner) => (corner ? corner * longest + bleed : 0)) };
 };
 
+/** A solid device in the image's own box and units, as it faces now. */
+export interface SolidShape {
+  kind: SolidKind;
+  /** Its device, and the group it's in: phones and tablets differ in depth. */
+  device: string;
+  group: string;
+  /** The body; a laptop's lid; a desktop's display. */
+  body: Box;
+  /** The body's corner radii, top left going clockwise. */
+  corners: number[];
+  /** `from` and `to` run along the side, left to right or top to bottom. */
+  buttons: DeviceButton[];
+  base?: Box;
+  stand?: Box;
+  foot?: Box;
+  /** The device's width as drawn, before any turn: what its depth is measured against. */
+  across: number;
+  /** Its sides and back. */
+  color: string;
+  /** A laptop's lid, in degrees open. */
+  lidAngle: number;
+  /** On its side: the artwork's top is the image's left. */
+  turned: boolean;
+}
+
+/** The solid an image's device is built as in 3D, or null if it turns flat. */
+export const solidOf = (el: ImageElement): SolidShape | null => {
+  const frame = el.deviceFrame;
+  const device = frame ? deviceOf(frame) : undefined;
+  if (!frame || !device?.solid || !device.body) return null;
+  const color = device.finishes.find((finish) => finish.id === frame.finish)?.color ?? device.finishes[0].color ?? "#9A9A9E";
+  const turned = isFrameTurned(frame);
+  const { corners } = device.body;
+
+  // Turned, it's a quarter turn anticlockwise, as the artwork is drawn: its left side is
+  // now the bottom, and its top the left.
+  const fromArt = (box: Box): Box =>
+    turned
+      ? {
+          x: box.y * el.width,
+          y: (1 - box.x - box.width) * el.height,
+          width: box.height * el.width,
+          height: box.width * el.height,
+        }
+      : { x: box.x * el.width, y: box.y * el.height, width: box.width * el.width, height: box.height * el.height };
+  const across = turned ? el.height : el.width;
+  const sideAfterTurn: Record<DeviceButton["side"], DeviceButton["side"]> = {
+    left: "bottom",
+    right: "top",
+    top: "left",
+    bottom: "right",
+  };
+
+  return {
+    kind: device.solid,
+    device: device.id,
+    group: device.group,
+    body: fromArt(device.body),
+    corners: (turned ? [corners[1], corners[2], corners[3], corners[0]] : corners).map((corner) => corner * across),
+    buttons: (device.buttons ?? []).map((button) => {
+      const side = turned ? sideAfterTurn[button.side] : button.side;
+      // The artwork's top and bottom run the other way once turned.
+      const reversed = turned && (button.side === "top" || button.side === "bottom");
+      const along = side === "left" || side === "right" ? el.height : el.width;
+      return {
+        side,
+        from: (reversed ? 1 - button.to : button.from) * along,
+        to: (reversed ? 1 - button.from : button.to) * along,
+        out: button.out * across,
+      };
+    }),
+    ...(device.base ? { base: fromArt(device.base) } : {}),
+    ...(device.stand && device.foot ? { stand: fromArt(device.stand), foot: fromArt(device.foot) } : {}),
+    across,
+    color,
+    lidAngle: frame.lidAngle ?? LID_ANGLE.usual,
+    turned,
+  };
+};
+
 /** The largest box of this shape inside another, centred. */
 export const largestIn = (source: Box, ratio: number): Box => {
   const width = Math.min(source.width, source.height * ratio);
@@ -401,6 +523,7 @@ export const newFrame = (device: DeviceDef, pictureRatio: number, from?: DeviceF
   thickness: from?.thickness ?? FRAME_DEFAULTS.thickness,
   roundness: from?.roundness ?? FRAME_DEFAULTS.roundness,
   address: from?.address ?? FRAME_DEFAULTS.address,
+  ...(from?.lidAngle !== undefined ? { lidAngle: from.lidAngle } : {}),
 });
 
 const RATIO_SLOP = 0.001;
@@ -538,6 +661,9 @@ export const migrateFrame = (el: ImageElement): ImageElement => {
     thickness: clampTo(frame.thickness, 0, THICKNESS_MAX, FRAME_DEFAULTS.thickness),
     roundness: clampTo(frame.roundness, 0, ROUNDNESS_MAX, FRAME_DEFAULTS.roundness),
     address: typeof frame.address === "string" ? frame.address : FRAME_DEFAULTS.address,
+    ...(typeof frame.lidAngle === "number" && Number.isFinite(frame.lidAngle)
+      ? { lidAngle: clampTo(frame.lidAngle, LID_ANGLE.min, LID_ANGLE.max, LID_ANGLE.usual) }
+      : {}),
   };
   // A device that's been replaced can have a different shape.
   const ratio = frameShape(next, pictureRatioOf(el)).ratio;

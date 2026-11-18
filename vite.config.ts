@@ -13,7 +13,7 @@ export default defineConfig({
   // Loaded only when exporting an animation or saving a project: bundled up front, or
   // Vite reloads the page the first time one is reached for.
   optimizeDeps: {
-    include: ["mediabunny", "gifenc", "fflate", "omggif"],
+    include: ["mediabunny", "gifenc", "fflate", "omggif", "three"],
   },
   server: {
     port: 5173,

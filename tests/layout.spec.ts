@@ -831,3 +831,102 @@ test.describe("saving the new settings", () => {
     }
   });
 });
+
+test.describe("tilting the whole layout", () => {
+  /** Where each image's corners land on the tilted surface, in canvas pixels: TL, TR, BL, BR. */
+  const surfaceCorners = (page: Page) =>
+    page.evaluate<{ id: string; corners: [number, number][]; box: { x: number; y: number; width: number; height: number } }[]>(`(async () => {
+      const LY = await import("/src/lib/layouts.ts");
+      const TR = await import("/src/lib/tiltRender.ts");
+      const s = S.getState();
+      const surface = LY.layoutSurfaceOf(s.layout, LY.arrangeLayout(s.layout, s.elements, s.canvas));
+      return s.layout.slots.filter((slot) => slot.id).map((slot) => {
+        const el = s.elements.find((e) => e.id === slot.id);
+        const look = { tilt: { ...surface.tilt, scale: 1 }, width: el.width, height: el.height, cornerRadius: 0, plane: TR.planeFrom(surface.pivot, surface.span, el) };
+        const corners = TR.tiltCorners(look).map((c) => [el.x + c.x, el.y + c.y]);
+        return { id: el.id, corners, box: TR.tiltBoxOf(TR.tiltCorners(look)) };
+      });
+    })()`);
+
+  test("turns its images, cards and badges together, as one surface", async ({ page }) => {
+    const errors = await openApp(page, "Layout");
+    await addImages(page, [[800, 600, "#a33"], [800, 600, "#3a3"]]);
+    await pick(page, "Before & after");
+    await page.evaluate(`S.getState().updateLayout({ cards: { ...S.getState().layout.cards, show: true } })`);
+    await panel(page).getByRole("button", { name: "Iso Left" }).click();
+    await page.waitForTimeout(300);
+    expect(await page.evaluate(`S.getState().layout.tilt`)).toMatchObject({ tiltX: 25, tiltY: -25, tiltZ: 0 });
+
+    const placed = await surfaceCorners(page);
+    for (const { id, box } of placed) {
+      // Drawn turned, where the surface puts it.
+      const node = (await page.evaluate(`(() => {
+        const n = ST().findOne("#${id}").findOne(".tilted-picture");
+        return n && { visible: n.isVisible(), x: n.x(), y: n.y(), width: n.width(), height: n.height() };
+      })()`)) as { visible: boolean; x: number; y: number; width: number; height: number } | null;
+      expect(node).toMatchObject({ visible: true, ...box });
+      expect(await page.evaluate(`!!ST().findOne("#card-${id}").findOne(".turned-card")?.isVisible()`)).toBe(true);
+    }
+    // One surface: the top edges of side-by-side images lie on one straight line, as they
+    // would if each were a strip of the same page. Turned each about its own middle, they
+    // wouldn't.
+    const [a, b] = placed;
+    const [p, q] = [a.corners[0], b.corners[1]];
+    const offLine = (point: [number, number]) =>
+      Math.abs((q[0] - p[0]) * (point[1] - p[1]) - (q[1] - p[1]) * (point[0] - p[0])) / Math.hypot(q[0] - p[0], q[1] - p[1]);
+    expect(offLine(a.corners[1])).toBeLessThan(0.5);
+    expect(offLine(b.corners[0])).toBeLessThan(0.5);
+
+    // The labels are drawn turned, in place of the flat ones.
+    expect(await page.evaluate(`!!ST().findOne(".turned-decor")?.isVisible()`)).toBe(true);
+    expect(await page.evaluate(`ST().findOne(".layout-decor").visible()`)).toBe(false);
+    expect(errors).toEqual([]);
+  });
+
+  test("an image takes its layout's tilt, and gets its own back when the layout is flat", async ({ page }) => {
+    const errors = await openApp(page, "Layout");
+    const [first] = await addImages(page, [[800, 600, "#a33"], [800, 600, "#3a3"]]);
+    await pick(page, "Side by side");
+    await page.evaluate(`(async () => {
+      const T = await import("/src/lib/tilt.ts");
+      S.getState().updateElement(${JSON.stringify(first)}, { transform: T.serializeImageTilt({ ...T.DEFAULT_IMAGE_TILT, tiltY: 15 }) });
+      S.getState().updateLayout({ tilt: { ...S.getState().layout.tilt, tiltX: 20 } });
+      S.getState().selectElement(${JSON.stringify(first)});
+    })()`);
+    await openSection(page, "3D");
+    const properties = page.getByRole("complementary", { name: "Properties" });
+    await expect(properties.getByText("It tilts with its layout", { exact: false })).toBeVisible();
+    await expect(properties.getByRole("button", { name: "Iso Left" })).toHaveCount(0);
+
+    await page.evaluate(`S.getState().updateLayout({ tilt: { ...S.getState().layout.tilt, tiltX: 0 } })`);
+    await expect(properties.getByRole("button", { name: "Iso Left" })).toBeVisible();
+    // Its own tilt was kept, and shows again.
+    expect(await page.evaluate(`S.getState().elements.find((e) => e.id === ${JSON.stringify(first)}).transform`)).toContain(
+      "rotateY(15deg)",
+    );
+    await expect.poll(() => page.evaluate(`!!ST().findOne("#${first}").findOne(".tilted-picture")?.isVisible()`)).toBe(true);
+    expect(errors).toEqual([]);
+  });
+
+  test("is saved with the project, and an older layout opens flat", async ({ page }) => {
+    await openApp(page, "Layout");
+    await addImages(page, [[800, 600, "#a33"], [800, 600, "#3a3"]]);
+    await pick(page, "Side by side");
+    await page.evaluate(`S.getState().updateLayout({ tilt: { tiltX: 10, tiltY: -20, tiltZ: 5, perspective: 900, innerShadow: false } })`);
+    const saved = await page.evaluate<string>(`JSON.stringify(S.getState().toProject())`);
+    await page.evaluate(`(() => { const s = S.getState(); s.resetProject(); s.loadProject(${saved}); })()`);
+    expect(await page.evaluate(`S.getState().layout.tilt`)).toEqual({
+      tiltX: 10,
+      tiltY: -20,
+      tiltZ: 5,
+      perspective: 900,
+      innerShadow: false,
+    });
+
+    const older = JSON.parse(saved);
+    delete older.layout.tilt;
+    await page.evaluate(`(() => { const s = S.getState(); s.resetProject(); s.loadProject(${JSON.stringify(older)}); })()`);
+    expect(await page.evaluate(`S.getState().layout.tilt`)).toMatchObject({ tiltX: 0, tiltY: 0, tiltZ: 0 });
+    expect(await page.evaluate(`!!ST().findOne(".tilted-picture")`)).toBe(false);
+  });
+});

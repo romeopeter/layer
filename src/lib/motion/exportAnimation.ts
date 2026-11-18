@@ -5,6 +5,8 @@ import { captureBox, withOverlaysHidden } from "@/lib/exporters";
 import { saveExport } from "@/lib/host";
 import { prepareExportTiles } from "@/lib/export/prepareExportTiles";
 import { prepareExportBackdrop } from "@/lib/export/prepareExportBackdrop";
+import { loadSolids, whenTurnedDrawn } from "@/lib/devices3d";
+import { hasBody } from "@/lib/mockups";
 import { poseStage, type MotionScene } from "./pose";
 import { frameCount } from "./timing";
 import type { GifMessage, GifReply } from "./gif.worker";
@@ -141,6 +143,11 @@ export const renderAnimation = async (options: AnimationExport): Promise<Blob> =
   try {
     return await withOverlaysHidden(stage, {}, async () => {
       await document.fonts.ready;
+      // Any phone, tablet or laptop may turn as a solid in some frame: three.js first.
+      if (scene.elements.some((el) => el.type === "image" && el.deviceFrame && hasBody(el.deviceFrame))) {
+        await loadSolids();
+      }
+      await whenTurnedDrawn();
       const cleanupTiles = await prepareExportTiles(stage, sink.ratio);
       const cleanupBackdrop = await prepareExportBackdrop(stage, sink.ratio);
       try {

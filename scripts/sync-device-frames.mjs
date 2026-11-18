@@ -16,6 +16,10 @@
  * much it shows. That gives a true transparent hole, soft corners included, and
  * keeps anything that sits over the screen, such as a notch.
  *
+ * Phones, tablets and laptops also get a solid body for 3D, measured from their
+ * finished PNGs: the outline without side buttons, the buttons, a laptop's base, and
+ * each finish's colour. `--measure` runs only that step, leaving the PNGs as they are.
+ *
  * Re-run only to change the device list; the output is committed.
  */
 import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -362,138 +366,450 @@ const measureHole = async ({ src, thumbSize }) => {
   };
 };
 
+/** How each device is built in 3D: a slab, a lid on a base, or a display on a stand. */
+const LAPTOPS = new Set(["macbook-pro", "macbook", "laptop", "surface-book"]);
+const solidOf = (device) => (LAPTOPS.has(device.id) ? "laptop" : device.group === "Computers" ? "desktop" : "slab");
+
+/**
+ * Runs in the page. A device's solid body, measured from its artwork in its pixels:
+ * the outline without its buttons, with each corner's radius; the buttons; a laptop's
+ * base, the wider strip below its lid; and a desktop's stand below its display, with
+ * the foot it rests on.
+ */
+const measureBody = async ({ src, solid, screen }) => {
+  const image = new Image();
+  image.src = src;
+  await image.decode();
+  const width = image.naturalWidth;
+  const height = image.naturalHeight;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.drawImage(image, 0, 0);
+  const { data } = context.getImageData(0, 0, width, height);
+  const isSolid = (x, y) => x >= 0 && y >= 0 && x < width && y < height && data[(y * width + x) * 4 + 3] >= 128;
+
+  // Each row's first and last solid pixel, and each column's. -1 where there's none.
+  const rowStart = new Int32Array(height).fill(-1);
+  const rowEnd = new Int32Array(height).fill(-1);
+  const colStart = new Int32Array(width).fill(-1);
+  const colEnd = new Int32Array(width).fill(-1);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (!isSolid(x, y)) continue;
+      if (rowStart[y] < 0) rowStart[y] = x;
+      rowEnd[y] = x;
+      if (colStart[x] < 0) colStart[x] = y;
+      colEnd[x] = y;
+    }
+  }
+
+  /** The value most of these share: a body's edge, which buttons cover less of. */
+  const mode = (values) => {
+    const counts = new Map();
+    let best = values[0];
+    for (const value of values) {
+      if (value < 0) continue;
+      const count = (counts.get(value) ?? 0) + 1;
+      counts.set(value, count);
+      if (count > (counts.get(best) ?? 0)) best = value;
+    }
+    return best;
+  };
+  const range = (from, to) => {
+    const out = [];
+    for (let i = Math.round(from); i < Math.round(to); i += 1) out.push(i);
+    return out;
+  };
+
+  // A laptop's lid and a desktop's display are the upper part, with something below.
+  const sideRows = solid === "slab" ? range(height * 0.15, height * 0.85) : range(height * 0.1, height * 0.45);
+  let left = mode(sideRows.map((y) => rowStart[y]));
+  let right = mode(sideRows.map((y) => rowEnd[y]));
+  // Where buttons cover most of a side (a watch's crown guard), no row shows its edge. A
+  // side much further from the screen's middle than the other is mirrored from it.
+  const middle = (screen.x + screen.width / 2) * width;
+  const reach = Math.min(middle - left, right - middle);
+  if (Math.abs(middle - left - (right - middle)) > width * 0.03) {
+    left = Math.round(middle - reach);
+    right = Math.round(middle + reach);
+  }
+  const middleColumns = range(left + (right - left) * 0.2, right - (right - left) * 0.2);
+  const top = mode(middleColumns.map((x) => colStart[x]));
+
+  let bottom = mode(middleColumns.map((x) => colEnd[x]));
+  let base = null;
+  if (solid === "laptop") {
+    const lidWidth = right - left;
+    const tolerance = Math.max(4, lidWidth * 0.01);
+    const across = (y) => (rowStart[y] < 0 ? 0 : rowEnd[y] - rowStart[y]);
+    // Start from the widest row low down, then walk up and down while it stays wider.
+    let widest = Math.round(height * 0.8);
+    for (let y = widest; y < height; y += 1) if (across(y) > across(widest)) widest = y;
+    if (across(widest) <= lidWidth + tolerance) throw new Error("No base wider than the lid");
+    let baseTop = widest;
+    while (baseTop > 0 && across(baseTop - 1) > lidWidth + tolerance) baseTop -= 1;
+    let baseBottom = widest;
+    while (baseBottom < height - 1 && rowStart[baseBottom + 1] >= 0) baseBottom += 1;
+    const baseRows = range(baseTop, baseBottom + 1);
+    base = {
+      x: mode(baseRows.map((y) => rowStart[y])),
+      y: baseTop,
+      width: mode(baseRows.map((y) => rowEnd[y])) + 1 - mode(baseRows.map((y) => rowStart[y])),
+      height: baseBottom + 1 - baseTop,
+    };
+    bottom = baseTop - 1;
+  }
+
+  let stand = null;
+  let foot = null;
+  if (solid === "desktop") {
+    // The display ends where the outline narrows to its stand.
+    const displayWidth = right - left;
+    const across = (y) => (rowStart[y] < 0 ? 0 : rowEnd[y] - rowStart[y]);
+    let displayBottom = Math.round(height * 0.45);
+    while (displayBottom < height - 1 && across(displayBottom + 1) >= displayWidth * 0.8) displayBottom += 1;
+    let last = height - 1;
+    while (last > displayBottom && rowStart[last] < 0) last -= 1;
+    const standRows = range(displayBottom + 1, last + 1);
+    if (!standRows.length) throw new Error("No stand below the display");
+    const standLeft = Math.min(...standRows.map((y) => rowStart[y]));
+    const standRight = Math.max(...standRows.map((y) => rowEnd[y]));
+    stand = { x: standLeft, y: displayBottom + 1, width: standRight + 1 - standLeft, height: last - displayBottom };
+    // The foot is the strip it stands on, along the bottom.
+    const footRows = range(last + 1 - Math.max(2, Math.round(height * 0.035)), last + 1);
+    const footLeft = mode(footRows.map((y) => rowStart[y]));
+    const footRight = mode(footRows.map((y) => rowEnd[y]));
+    foot = { x: footLeft, y: footRows[0], width: footRight + 1 - footLeft, height: footRows.length };
+    bottom = displayBottom;
+  }
+
+  /**
+   * A corner's radius, from how much of the box's corner is empty: a quarter circle
+   * leaves r²(1 − π/4). That suits the smooth corners phones have as well as round ones.
+   */
+  const cornerRadius = (fromTop, onLeft) => {
+    let empty = 0;
+    const step = fromTop ? 1 : -1;
+    for (let y = fromTop ? top : bottom; fromTop ? y <= bottom : y >= top; y += step) {
+      const gap = onLeft ? rowStart[y] - left : right - rowEnd[y];
+      if (rowStart[y] < 0 || gap <= 0) break;
+      empty += gap;
+    }
+    return Math.sqrt(empty / (1 - Math.PI / 4));
+  };
+  // A lid's bottom corners are its hinge.
+  const corners =
+    solid === "laptop"
+      ? [cornerRadius(true, true), cornerRadius(true, false), 0, 0]
+      : [cornerRadius(true, true), cornerRadius(true, false), cornerRadius(false, false), cornerRadius(false, true)];
+
+  // Buttons: runs of solid pixels just outside the body, and how far they stand out.
+  const buttons = [];
+  if (solid === "slab") {
+    const runs = (length, solidAt) => {
+      const found = [];
+      let start = -1;
+      for (let i = 0; i <= length; i += 1) {
+        const on = i < length && solidAt(i);
+        if (on && start < 0) start = i;
+        if (!on && start >= 0) {
+          found.push([start, i]);
+          start = -1;
+        }
+      }
+      return found;
+    };
+    const minimum = Math.min(width, height) * 0.02;
+    const sides = [
+      { side: "left", length: height, at: (i) => isSolid(left - 2, i), out: (i) => left - rowStart[i] },
+      { side: "right", length: height, at: (i) => isSolid(right + 2, i), out: (i) => rowEnd[i] - right },
+      { side: "top", length: width, at: (i) => isSolid(i, top - 2), out: (i) => top - colStart[i] },
+      { side: "bottom", length: width, at: (i) => isSolid(i, bottom + 2), out: (i) => colEnd[i] - bottom },
+    ];
+    for (const { side, length, at, out } of sides) {
+      for (const [from, to] of runs(length, at)) {
+        if (to - from < minimum) continue;
+        let most = 0;
+        for (let i = from; i < to; i += 1) most = Math.max(most, out(i));
+        buttons.push({ side, from, to, out: most });
+      }
+    }
+  }
+
+  return {
+    width,
+    height,
+    body: { x: left, y: top, width: right + 1 - left, height: bottom + 1 - top },
+    corners,
+    buttons,
+    base,
+    stand,
+    foot,
+  };
+};
+
+/**
+ * Runs in the page: the colour of an area's lit metal, as hex. Near-black pixels (outlines,
+ * bezels) are left out, and of the rest it takes one 70% of the way from dark to light,
+ * since the artwork shades the band from light to dark.
+ */
+const sampleColor = async ({ src, area }) => {
+  const image = new Image();
+  image.src = src;
+  await image.decode();
+  const canvas = document.createElement("canvas");
+  canvas.width = image.naturalWidth;
+  canvas.height = image.naturalHeight;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.drawImage(image, 0, 0);
+  const { data } = context.getImageData(area.x, area.y, area.width, area.height);
+  const pixels = [];
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] < 250) continue;
+    const luma = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+    if (luma < 24) continue;
+    pixels.push({ luma, rgb: [data[i], data[i + 1], data[i + 2]] });
+  }
+  if (!pixels.length) throw new Error("Nothing to sample");
+  pixels.sort((a, b) => a.luma - b.luma);
+  const { rgb } = pixels[Math.min(pixels.length - 1, Math.floor(pixels.length * 0.7))];
+  return `#${rgb.map((channel) => channel.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+};
+
 const toDataUrl = (png) => `data:image/png;base64,${png.toString("base64")}`;
 const fromDataUrl = (url) => Buffer.from(url.slice(url.indexOf(",") + 1), "base64");
 const fraction = (value) => Number(value.toFixed(5));
 
-rmSync(OUTPUT_DIR, { recursive: true, force: true });
-mkdirSync(THUMB_DIR, { recursive: true });
+const MEASURE_ONLY = process.argv.includes("--measure");
 
-const browser = await webkit.launch();
-const context = await browser.newContext({
-  viewport: { width: 2200, height: 1600 },
-  deviceScaleFactor: SCALE,
-});
-const renderPage = await context.newPage();
-const matteContext = await browser.newContext();
-const mattePage = await matteContext.newPage();
+/** Renders every device to public/frames/, and measures its screen. */
+const renderAll = async (browser) => {
+  rmSync(OUTPUT_DIR, { recursive: true, force: true });
+  mkdirSync(THUMB_DIR, { recursive: true });
+  const context = await browser.newContext({
+    viewport: { width: 2200, height: 1600 },
+    deviceScaleFactor: SCALE,
+  });
+  const renderPage = await context.newPage();
+  const matteContext = await browser.newContext();
+  const mattePage = await matteContext.newPage();
 
-const devices = [];
-let totalBytes = 0;
+  const devices = [];
+  let totalBytes = 0;
 
-for (const device of DEVICES) {
-  let geometry = null;
-  const finishes = [];
+  for (const device of DEVICES) {
+    let geometry = null;
+    const finishes = [];
 
-  for (const [finish, label] of device.finishes) {
-    const deviceClass = `${device.id} ${finish}`;
-    const id = finish || "default";
-    const name = `${device.id}-${id}.png`;
+    for (const [finish, label] of device.finishes) {
+      const deviceClass = `${device.id} ${finish}`;
+      const id = finish || "default";
+      const name = `${device.id}-${id}.png`;
 
-    if (device.source === "monkr") {
-      const png = readFileSync(new URL(`${finish}.png`, MONKR_DIR));
-      const result = await mattePage.evaluate(measureHole, {
-        src: toDataUrl(png),
+      if (device.source === "monkr") {
+        const png = readFileSync(new URL(`${finish}.png`, MONKR_DIR));
+        const result = await mattePage.evaluate(measureHole, {
+          src: toDataUrl(png),
+          thumbSize: THUMB_SIZE,
+        });
+        const next = {
+          width: result.width,
+          height: result.height,
+          screen: {
+            x: fraction(result.hole.x / result.width),
+            y: fraction(result.hole.y / result.height),
+            width: fraction(result.hole.width / result.width),
+            height: fraction(result.hole.height / result.height),
+          },
+          corners: [0, 0, 0, 0].map(() => fraction(MONKR_CORNER / result.width)),
+        };
+        geometry = next;
+        writeFileSync(new URL(name, OUTPUT_DIR), png);
+        writeFileSync(new URL(name, THUMB_DIR), fromDataUrl(result.thumb));
+        totalBytes += png.length;
+        finishes.push({ id, label });
+        continue;
+      }
+
+      const onBlack = await capture(renderPage, device, finish, "#000");
+      const onWhite = await capture(renderPage, device, finish, "#fff");
+      const result = await mattePage.evaluate(matte, {
+        onBlack: toDataUrl(onBlack.png),
+        onWhite: toDataUrl(onWhite.png),
+        area: {
+          x: Math.floor((onBlack.screen.x - onBlack.clip.x) * SCALE),
+          y: Math.floor((onBlack.screen.y - onBlack.clip.y) * SCALE),
+          width: Math.ceil(onBlack.screen.width * SCALE),
+          height: Math.ceil(onBlack.screen.height * SCALE),
+        },
         thumbSize: THUMB_SIZE,
       });
-      const next = {
-        width: result.width,
-        height: result.height,
-        screen: {
-          x: fraction(result.hole.x / result.width),
-          y: fraction(result.hole.y / result.height),
-          width: fraction(result.hole.width / result.width),
-          height: fraction(result.hole.height / result.height),
-        },
-        corners: [0, 0, 0, 0].map(() => fraction(MONKR_CORNER / result.width)),
+
+      // What's actually visible, not what the stylesheet says: on some devices the
+      // frame overlaps the screen by a pixel or two. In CSS px from the frame's corner.
+      const measured = {
+        x: (result.hole.x - result.trimmed.x) / SCALE,
+        y: (result.hole.y - result.trimmed.y) / SCALE,
+        width: result.hole.width / SCALE,
+        height: result.hole.height / SCALE,
       };
-      geometry = next;
-      writeFileSync(new URL(name, OUTPUT_DIR), png);
-      writeFileSync(new URL(name, THUMB_DIR), fromDataUrl(result.thumb));
-      totalBytes += png.length;
-      finishes.push({ id, label });
-      continue;
-    }
-
-    const onBlack = await capture(renderPage, device, finish, "#000");
-    const onWhite = await capture(renderPage, device, finish, "#fff");
-    const result = await mattePage.evaluate(matte, {
-      onBlack: toDataUrl(onBlack.png),
-      onWhite: toDataUrl(onWhite.png),
-      area: {
-        x: Math.floor((onBlack.screen.x - onBlack.clip.x) * SCALE),
-        y: Math.floor((onBlack.screen.y - onBlack.clip.y) * SCALE),
-        width: Math.ceil(onBlack.screen.width * SCALE),
-        height: Math.ceil(onBlack.screen.height * SCALE),
-      },
-      thumbSize: THUMB_SIZE,
-    });
-
-    // What's actually visible, not what the stylesheet says: on some devices the
-    // frame overlaps the screen by a pixel or two. In CSS px from the frame's corner.
-    const measured = {
-      x: (result.hole.x - result.trimmed.x) / SCALE,
-      y: (result.hole.y - result.trimmed.y) / SCALE,
-      width: result.hole.width / SCALE,
-      height: result.hole.height / SCALE,
-    };
-    const overlap = Math.max(
-      Math.abs(measured.width - onBlack.screen.width),
-      Math.abs(measured.height - onBlack.screen.height),
-    );
-    // Anything more than a sliver means the cut-out went wrong, not a design detail.
-    if (overlap > MAX_OVERLAP) {
-      throw new Error(
-        `${deviceClass}: the visible screen is ${measured.width}×${measured.height}, but the stylesheet says ${onBlack.screen.width}×${onBlack.screen.height}`,
+      const overlap = Math.max(
+        Math.abs(measured.width - onBlack.screen.width),
+        Math.abs(measured.height - onBlack.screen.height),
       );
+      // Anything more than a sliver means the cut-out went wrong, not a design detail.
+      if (overlap > MAX_OVERLAP) {
+        throw new Error(
+          `${deviceClass}: the visible screen is ${measured.width}×${measured.height}, but the stylesheet says ${onBlack.screen.width}×${onBlack.screen.height}`,
+        );
+      }
+
+      const width = result.trimmed.width / SCALE;
+      const height = result.trimmed.height / SCALE;
+      const next = {
+        width,
+        height,
+        screen: {
+          x: fraction(measured.x / width),
+          y: fraction(measured.y / height),
+          width: fraction(measured.width / width),
+          height: fraction(measured.height / height),
+        },
+        // Top left, top right, bottom right, bottom left, as fractions of the device's width.
+        corners: onBlack.corners.map((corner) => fraction(corner / width)),
+      };
+      if (geometry && JSON.stringify(geometry) !== JSON.stringify(next)) {
+        throw new Error(`${deviceClass}: finishes of one device have different shapes`);
+      }
+      geometry = next;
+
+      const frame = fromDataUrl(result.frame);
+      writeFileSync(new URL(name, OUTPUT_DIR), frame);
+      writeFileSync(new URL(name, THUMB_DIR), fromDataUrl(result.thumb));
+      totalBytes += frame.length;
+      finishes.push({ id, label });
     }
 
-    const width = result.trimmed.width / SCALE;
-    const height = result.trimmed.height / SCALE;
-    const next = {
-      width,
-      height,
-      screen: {
-        x: fraction(measured.x / width),
-        y: fraction(measured.y / height),
-        width: fraction(measured.width / width),
-        height: fraction(measured.height / height),
-      },
-      // Top left, top right, bottom right, bottom left, as fractions of the device's width.
-      corners: onBlack.corners.map((corner) => fraction(corner / width)),
-    };
-    if (geometry && JSON.stringify(geometry) !== JSON.stringify(next)) {
-      throw new Error(`${deviceClass}: finishes of one device have different shapes`);
-    }
-    geometry = next;
-
-    const frame = fromDataUrl(result.frame);
-    writeFileSync(new URL(name, OUTPUT_DIR), frame);
-    writeFileSync(new URL(name, THUMB_DIR), fromDataUrl(result.thumb));
-    totalBytes += frame.length;
-    finishes.push({ id, label });
+    devices.push({
+      id: device.id,
+      label: device.label,
+      group: device.group,
+      rotates: device.rotates,
+      ...geometry,
+      finishes,
+    });
+    console.log(`${device.id}: ${geometry.width}×${geometry.height}, screen ${JSON.stringify(geometry.screen)}`);
   }
 
-  devices.push({
-    id: device.id,
-    label: device.label,
-    group: device.group,
-    rotates: device.rotates,
-    ...geometry,
-    finishes,
-  });
-  console.log(`${device.id}: ${geometry.width}×${geometry.height}, screen ${JSON.stringify(geometry.screen)}`);
-}
+  copyFileSync(new URL("LICENSE", DEVICES_CSS_DIR), new URL("LICENSE-devices.css.txt", OUTPUT_DIR));
+  copyFileSync(new URL("LICENSE", MOCKFRAME_DIR), new URL("LICENSE-react-mockframe.txt", OUTPUT_DIR));
+  copyFileSync(new URL("LICENSE", MONKR_DIR), new URL("LICENSE-monkr.txt", OUTPUT_DIR));
+  console.log(`Rendered ${devices.length} devices, ${(totalBytes / 1024 / 1024).toFixed(1)} MB of frames.`);
+  return devices;
+};
 
+/**
+ * The band round a slab's edge, at mid-height, on a side with no button there. A watch's
+ * sides carry its crown and buttons, which can be coloured, so it's along its top.
+ */
+const edgeArea = (body, buttons, onTop) => {
+  const band = { from: body.y + body.height * 0.45, to: body.y + body.height * 0.55 };
+  const clear = (side) => !buttons.some((b) => b.side === side && b.from < band.to && b.to > band.from);
+  const across = Math.max(3, Math.round(body.width * 0.015));
+  const y = Math.round(band.from);
+  const height = Math.round(band.to - band.from);
+  if (!onTop && clear("left")) return { x: body.x, y, width: across, height };
+  if (!onTop && clear("right")) return { x: body.x + body.width - across, y, width: across, height };
+  // Along the top instead, a quarter of the way in.
+  return {
+    x: Math.round(body.x + body.width * 0.2),
+    y: body.y,
+    width: Math.round(body.width * 0.1),
+    height: Math.max(3, Math.round(body.height * 0.015)),
+  };
+};
+
+/** Adds a solid body to each device, measured from its PNGs. */
+const measureSolids = async (browser, devices) => {
+  const page = await (await browser.newContext()).newPage();
+  const measured = [];
+  for (const device of devices) {
+    // What a device had before, from an earlier run, is measured again.
+    const { body: _body, base: _base, buttons: _buttons, stand: _stand, foot: _foot, finishes, ...rest } = device;
+    const plainFinishes = finishes.map(({ id, label }) => ({ id, label }));
+    const solid = solidOf(device);
+    const fileOf = (finish) => readFileSync(new URL(`${device.id}-${finish}.png`, OUTPUT_DIR));
+    const shape = await page.evaluate(measureBody, { src: toDataUrl(fileOf(finishes[0].id)), solid, screen: rest.screen });
+    const across = (value) => fraction(value / shape.width);
+    const down = (value) => fraction(value / shape.height);
+    const boxOf = (box) => ({ x: across(box.x), y: down(box.y), width: across(box.width), height: down(box.height) });
+
+    const { body } = shape;
+    const screen = rest.screen;
+    const inside =
+      screen.x >= across(body.x) &&
+      screen.y >= down(body.y) &&
+      screen.x + screen.width <= across(body.x + body.width) + 0.001 &&
+      screen.y + screen.height <= down(body.y + body.height) + 0.001;
+    if (!inside) throw new Error(`${device.id}: the screen isn't inside the body`);
+
+    // The sides take the colour of the frame's edge; a laptop's, of its base; a desktop's,
+    // of its stand.
+    const strip = shape.base ?? shape.stand;
+    const sampleArea = strip
+      ? {
+          x: Math.round(strip.x + strip.width * (shape.base ? 0.2 : 0.4)),
+          y: Math.round(strip.y + strip.height * 0.3),
+          width: Math.max(1, Math.round(strip.width * 0.15)),
+          height: Math.max(1, Math.round(strip.height * 0.4)),
+        }
+      : edgeArea(body, shape.buttons, device.group === "Watches");
+    const colored = [];
+    for (const finish of plainFinishes) {
+      const color = await page.evaluate(sampleColor, { src: toDataUrl(fileOf(finish.id)), area: sampleArea });
+      colored.push({ ...finish, color });
+    }
+
+    measured.push({
+      ...rest,
+      solid,
+      body: {
+        ...boxOf(body),
+        // Top left, top right, bottom right, bottom left, as fractions of the device's width.
+        corners: shape.corners.map(across),
+      },
+      ...(shape.buttons.length
+        ? {
+            buttons: shape.buttons.map((button) => {
+              const vertical = button.side === "left" || button.side === "right";
+              return {
+                side: button.side,
+                from: vertical ? down(button.from) : across(button.from),
+                to: vertical ? down(button.to) : across(button.to),
+                out: across(button.out),
+              };
+            }),
+          }
+        : {}),
+      ...(shape.base ? { base: boxOf(shape.base) } : {}),
+      ...(shape.stand ? { stand: boxOf(shape.stand), foot: boxOf(shape.foot) } : {}),
+      finishes: colored,
+    });
+    console.log(
+      `${device.id}: ${solid}, body ${JSON.stringify(boxOf(body))}, ${shape.buttons.length} buttons, ${colored.map((f) => f.color).join(" ")}`,
+    );
+  }
+  return measured;
+};
+
+const browser = await webkit.launch();
+const rendered = MEASURE_ONLY ? JSON.parse(readFileSync(DATA_FILE, "utf8")).devices : await renderAll(browser);
+const devices = await measureSolids(browser, rendered);
 await browser.close();
 
-copyFileSync(new URL("LICENSE", DEVICES_CSS_DIR), new URL("LICENSE-devices.css.txt", OUTPUT_DIR));
-copyFileSync(new URL("LICENSE", MOCKFRAME_DIR), new URL("LICENSE-react-mockframe.txt", OUTPUT_DIR));
-copyFileSync(new URL("LICENSE", MONKR_DIR), new URL("LICENSE-monkr.txt", OUTPUT_DIR));
 const labels = new Set(devices.map((device) => device.label));
 if (labels.size !== devices.length) throw new Error("A device is listed twice");
-writeFileSync(
-  DATA_FILE,
-  `${JSON.stringify({ devices }, null, 2)}\n`,
-);
-console.log(`Wrote ${devices.length} devices, ${(totalBytes / 1024 / 1024).toFixed(1)} MB of frames.`);
+writeFileSync(DATA_FILE, `${JSON.stringify({ devices }, null, 2)}\n`);
+console.log(`Wrote ${devices.length} devices.`);

@@ -8,6 +8,7 @@ import type {
   LayerElement,
   LayoutAlign,
   LayoutCards,
+  LayoutTilt,
   LayoutDivider,
   LayoutId,
   LayoutSlot,
@@ -153,6 +154,10 @@ export const isOverlap = (id: LayoutId) => layoutOf(id)?.kind === "overlap";
 export const DEFAULT_DIVIDER: LayoutDivider = { style: "none", color: "#FFFFFF", width: 3 };
 export const DEFAULT_CARD_FILL: CardFill = { kind: "solid", color: "#FFFFFF" };
 const DEFAULT_CARDS: LayoutCards = { show: false, padding: 30, corners: 30, fills: [] };
+export const DEFAULT_LAYOUT_TILT: LayoutTilt = { tiltX: 0, tiltY: 0, tiltZ: 0, perspective: 800, innerShadow: true };
+
+export const isLayoutTilted = (layout: Pick<CanvasLayout, "tilt"> | null | undefined) =>
+  !!layout && (layout.tilt.tiltX !== 0 || layout.tilt.tiltY !== 0 || layout.tilt.tiltZ !== 0);
 /** How overlap layouts looked before they had a setting of their own (spacing 30). */
 const DEFAULT_OVERLAP = 70;
 
@@ -177,6 +182,7 @@ export const newLayout = (id: LayoutId, previous: CanvasLayout | null): CanvasLa
     slots: Array.from({ length: count }, (): LayoutSlot => ({ id: null })),
     divider: previous?.divider ?? DEFAULT_DIVIDER,
     cards: { ...cards, fills: fillsFor(cards.fills, count) },
+    tilt: previous?.tilt ?? DEFAULT_LAYOUT_TILT,
   };
 };
 
@@ -199,6 +205,43 @@ export const normaliseLayout = (raw: CanvasLayout | null | undefined): CanvasLay
     front: Number.isInteger(front) && front! >= 0 && front! < raw.slots.length ? front : undefined,
     divider: { ...DEFAULT_DIVIDER, ...raw.divider },
     cards: { ...cards, fills: fillsFor(Array.isArray(cards.fills) ? cards.fills : [], raw.slots.length) },
+    tilt: { ...DEFAULT_LAYOUT_TILT, ...raw.tilt },
+  };
+};
+
+/** A tilted layout seen as one surface: its tilt, and the middle and size of all it places. */
+export interface LayoutSurface {
+  tilt: LayoutTilt;
+  /** What it turns about, in the canvas's units. */
+  pivot: { x: number; y: number };
+  /** The size its perspective follows: the longer side of what it places. */
+  span: number;
+}
+
+/** The surface a tilted layout turns as; null when it's flat. */
+export const layoutSurfaceOf = (layout: CanvasLayout, arrangement: Arrangement): LayoutSurface | null => {
+  if (!isLayoutTilted(layout) || !arrangement.slots.length) return null;
+  const pad = arrangement.cards?.pad ?? 0;
+  const xs: number[] = [];
+  const ys: number[] = [];
+  for (const slot of arrangement.slots) {
+    // Slots turn about their top-left corner, as elements do; cards reach past them.
+    const angle = (slot.rotation * Math.PI) / 180;
+    for (const [u, v] of [
+      [-pad, -pad],
+      [slot.width + pad, -pad],
+      [-pad, slot.height + pad],
+      [slot.width + pad, slot.height + pad],
+    ]) {
+      xs.push(slot.x + u * Math.cos(angle) - v * Math.sin(angle));
+      ys.push(slot.y + u * Math.sin(angle) + v * Math.cos(angle));
+    }
+  }
+  const [left, right, top, bottom] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+  return {
+    tilt: layout.tilt,
+    pivot: { x: (left + right) / 2, y: (top + bottom) / 2 },
+    span: Math.max(right - left, bottom - top),
   };
 };
 
