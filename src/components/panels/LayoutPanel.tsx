@@ -31,6 +31,7 @@ import {
 import { ChoiceTile } from "./ChoiceTile";
 import { choiceClass } from "./choice";
 import { GradientControls } from "./GradientControls";
+import { TiltPicker } from "./TiltControls";
 import { IMAGE_FILE_TYPES } from "@/lib/importers";
 
 const PREVIEW = { width: 44, height: 32 };
@@ -472,6 +473,13 @@ export const LayoutPanel = () => {
 
           <Linebreak />
           <CardsSection layout={layout} />
+
+          <Linebreak />
+          <div className="flex flex-col gap-2.5">
+            <SectionLabel>3D</SectionLabel>
+            <PanelHelp>Tilts the whole layout as one surface: images, cards and badges together.</PanelHelp>
+            <TiltPicker tilt={layout.tilt} onChange={(patch) => updateLayout({ tilt: { ...layout.tilt, ...patch } })} />
+          </div>
 
           <Linebreak />
 

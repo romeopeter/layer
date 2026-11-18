@@ -48,10 +48,10 @@ const turnedPrint = (page: Page, id: string) =>
   })()`);
 
 /**
- * Where points of a solid device's front land once turned, in canvas pixels. Given as
- * fractions of the image's box. The image isn't rotated.
+ * Where points of a solid device land once turned, in canvas pixels. Given as fractions
+ * of the image's box, and a depth in its units (0 is its front). The image isn't rotated.
  */
-const landed = (page: Page, id: string, points: [number, number][]) =>
+const landed = (page: Page, id: string, points: ([number, number] | [number, number, number])[]) =>
   page.evaluate<[number, number][]>(`(async () => {
     const M = await import("/src/lib/mockups.ts");
     const B = await import("/src/lib/devices3d/bodies.ts");
@@ -60,12 +60,24 @@ const landed = (page: Page, id: string, points: [number, number][]) =>
     const el = S.getState().elements.find((e) => e.id === ${JSON.stringify(id)});
     const tilt = T.parseImageTilt(el.transform);
     const model = B.solidModel(M.solidOf(el));
-    const view = B.solidViewOf(model, tilt, el.width, el.height);
-    const turn = B.solidTiltOf(model, tilt);
-    return ${JSON.stringify(points)}.map(([u, v]) => {
-      const p = TR.projectPoint(B.placePoint(view, turn, el.width, el.height, [u * el.width, v * el.height, 0]), view.distance, el.width, el.height);
+    const plane = TR.ownPlane(el.width, el.height);
+    return ${JSON.stringify(points)}.map(([u, v, z]) => {
+      const p = B.landPoint(model, tilt, plane, [u * el.width, v * el.height, z ?? 0]);
       return [el.x + p.x, el.y + p.y];
     });
+  })()`);
+
+/** The solid model of an image's device, as the renderer builds it. */
+const modelOf = (page: Page, id: string) =>
+  page.evaluate<{
+    body: { box: { x: number; y: number; width: number; height: number }; depth: number };
+    blocks: { x: number; y: number; z: number; width: number; height: number; depth: number }[];
+    cutouts: { box: { x: number; y: number; width: number; height: number }; z: number }[];
+    camera?: { height: number; lenses: { x: number; y: number; radius: number }[] };
+  }>(`(async () => {
+    const M = await import("/src/lib/mockups.ts");
+    const B = await import("/src/lib/devices3d/bodies.ts");
+    return B.solidModel(M.solidOf(S.getState().elements.find((e) => e.id === ${JSON.stringify(id)})));
   })()`);
 
 /** Pixels of a still export without its background, at the canvas's own size. */
@@ -85,6 +97,109 @@ const exportPixels = (page: Page, points: [number, number][]) =>
 
 const IPHONE_17 = rawFrames.devices.find((device) => device.id === "iphone-17")!;
 const MACBOOK_PRO = rawFrames.devices.find((device) => device.id === "macbook-pro")!;
+
+test.describe("3D mockups: desktops, watches, laptops and phone backs", () => {
+  test("a desktop stands on its foot, seen from above", async ({ page }) => {
+    const errors = await openApp(page);
+    const id = await addTwoToneImage(page);
+    await frameOn(page, id, "imac", "blue");
+    await tiltTo(page, id, 25, 0);
+    await expect.poll(() => turnedShows(page, id)).toBe(true);
+
+    const model = await modelOf(page, id);
+    const el = (await page.evaluate(`S.getState().elements.find((e) => e.id === ${JSON.stringify(id)})`)) as {
+      width: number;
+      height: number;
+    };
+    const [stand] = model.cutouts;
+    const [foot] = model.blocks;
+    const at = (x: number, y: number, z: number): [number, number, number] => [x / el.width, y / el.height, z];
+    const points = await landed(page, id, [
+      // The middle of the stand, and the middle of the foot's top.
+      at(stand.box.x + stand.box.width / 2, stand.box.y + stand.box.height / 2, stand.z),
+      at(foot.x + foot.width / 2, foot.y, foot.z - foot.depth / 2),
+    ]);
+    const [neck, top] = await exportPixels(page, points);
+    expect(neck[3]).toBeGreaterThan(200);
+    expect(top[3]).toBeGreaterThan(200);
+    expect(errors).toEqual([]);
+  });
+
+  test("a watch turns as a solid, with its crown", async ({ page }) => {
+    const errors = await openApp(page);
+    const id = await addTwoToneImage(page);
+    await frameOn(page, id, "apple-watch-s8", "default");
+    // Turned to the left, so its right side and crown come into view.
+    await tiltTo(page, id, 0, -30);
+    await expect.poll(() => turnedShows(page, id)).toBe(true);
+    const model = await modelOf(page, id);
+    const el = (await page.evaluate(`S.getState().elements.find((e) => e.id === ${JSON.stringify(id)})`)) as {
+      width: number;
+      height: number;
+    };
+    const crown = model.blocks[0];
+    const [[x, y]] = await landed(page, id, [
+      [(crown.x + crown.width) / el.width, (crown.y + crown.height / 2) / el.height, crown.z - crown.depth / 2],
+    ]);
+    const [pixel] = await exportPixels(page, [[x - 2, y]]);
+    expect(pixel[3]).toBeGreaterThan(200);
+    expect(errors).toEqual([]);
+  });
+
+  test("a turned laptop's lid opens further, and the setting shows only then", async ({ page }) => {
+    const errors = await openApp(page);
+    const id = await addTwoToneImage(page);
+    await frameOn(page, id, "macbook-pro", "silver");
+    await openSection(page, "3D");
+    const properties = page.getByRole("complementary", { name: "Properties" });
+    await expect(properties.getByText("LID ANGLE")).toHaveCount(0);
+
+    await properties.getByRole("button", { name: "Viewer" }).click();
+    await expect(properties.getByText("LID ANGLE")).toHaveCount(1);
+    await expect.poll(() => turnedShows(page, id)).toBe(true);
+    const before = await turnedPrint(page, id);
+    await page.evaluate(`(() => {
+      const s = S.getState();
+      const el = s.elements.find((e) => e.id === ${JSON.stringify(id)});
+      s.setDeviceFrame(el.id, { ...el.deviceFrame, lidAngle: 130 });
+    })()`);
+    await expect.poll(async () => ((await turnedShows(page, id)) ? await turnedPrint(page, id) : before)).not.toBe(before);
+    // Saved with the frame, and kept within reach when read back.
+    expect(await page.evaluate(`S.getState().elements[0].deviceFrame.lidAngle`)).toBe(130);
+    expect(errors).toEqual([]);
+  });
+
+  test("a phone has a camera on its back", async ({ page }) => {
+    const errors = await openApp(page);
+    const id = await addTwoToneImage(page);
+    await frameOn(page, id, "iphone-17", "white");
+    // Turned round to show its back.
+    await tiltTo(page, id, 0, 180);
+    await expect.poll(() => turnedShows(page, id)).toBe(true);
+    const model = await modelOf(page, id);
+    const el = (await page.evaluate(`S.getState().elements.find((e) => e.id === ${JSON.stringify(id)})`)) as {
+      width: number;
+      height: number;
+    };
+    const camera = model.camera!;
+    expect(camera.lenses).toHaveLength(2);
+    const [lens] = camera.lenses;
+    const back = -model.body.depth;
+    const [[x, y], [px, py]] = await landed(page, id, [
+      [lens.x / el.width, lens.y / el.height, back - camera.height * 1.58],
+      // The back itself, well clear of the camera.
+      [0.5, 0.7, back],
+    ]);
+    const luma = (p: number[]) => 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2];
+    const [glass, plain] = await exportPixels(page, [
+      [x, y],
+      [px, py],
+    ]);
+    expect(luma(glass)).toBeLessThan(80);
+    expect(luma(plain)).toBeGreaterThan(120);
+    expect(errors).toEqual([]);
+  });
+});
 
 test.describe("3D mockups", () => {
   test("a phone turns as a solid from the 3D section, which no longer says mockups stay flat", async ({ page }) => {
@@ -149,15 +264,16 @@ test.describe("3D mockups", () => {
       const shape = { kind: "slab", device: "test", group: "Phones", body: { x: 0, y: 0, width, height }, corners: [40, 40, 40, 40], buttons: [], across: width, color: "#000000" };
       const model = B.solidModel(shape);
       const corners = [[0, 0], [width, 0], [0, height], [width, height]];
-      const front = (m, tilt) => {
-        const view = B.solidViewOf(m, tilt, width, height);
-        return corners.map(([x, y]) => TR.projectPoint(B.placePoint(view, B.solidTiltOf(m, tilt), width, height, [x, y, 0]), view.distance, width, height));
-      };
+      const plane = TR.ownPlane(width, height);
+      const front = (m, tilt) => corners.map(([x, y]) => B.landPoint(m, tilt, plane, [x, y, 0]));
       const gap = (a, b) => Math.max(...a.map((p, i) => Math.max(Math.abs(p.x - b[i].x), Math.abs(p.y - b[i].y))));
 
       // With no depth, its front is a tilted picture's.
       const tilt = { ...T.DEFAULT_IMAGE_TILT, tiltX: 20, tiltY: -30, tiltZ: 10, scale: 1.1 };
-      const thin = gap(front({ ...model, body: { ...model.body, depth: 0 } }, tilt), TR.tiltCorners({ tilt, width, height, cornerRadius: 0 }));
+      const thin = gap(
+        front({ ...model, body: { ...model.body, depth: 0 }, blocks: [], camera: undefined }, tilt),
+        TR.tiltCorners({ tilt, width, height, cornerRadius: 0 }),
+      );
 
       // With depth, untilted, its front is where the flat mockup is.
       const flat = { ...T.DEFAULT_IMAGE_TILT, tiltZ: 0 };
@@ -297,14 +413,9 @@ test.describe("3D mockups", () => {
   });
 });
 
-test("every phone, tablet and laptop has a measured body, with its screen inside", () => {
+test("every device has a measured body, with its screen inside", () => {
   const solids = rawFrames.devices.filter((device) => "solid" in device && device.solid);
-  const ids = solids.map((device) => device.id);
-  for (const device of rawFrames.devices) {
-    const laptop = ["macbook-pro", "macbook", "laptop", "surface-book"].includes(device.id);
-    const expected = device.group === "Phones" || device.group === "Tablets" || laptop;
-    expect(ids.includes(device.id), device.id).toBe(expected);
-  }
+  expect(solids.map((device) => device.id)).toEqual(rawFrames.devices.map((device) => device.id));
   for (const device of solids) {
     const { body, screen } = device as typeof device & {
       body: { x: number; y: number; width: number; height: number; corners: number[] };
@@ -319,6 +430,12 @@ test("every phone, tablet and laptop has a measured body, with its screen inside
     expect(screen.y + screen.height).toBeLessThanOrEqual(body.y + body.height + 0.001);
     expect(body.corners).toHaveLength(4);
     if (device.solid === "laptop") expect("base" in device && device.base, device.id).toBeTruthy();
+    if (device.solid === "desktop") {
+      const { stand, foot } = device as typeof device & { stand: { y: number }; foot: { y: number } };
+      // The stand starts where the display ends, and the foot is along its bottom.
+      expect(stand.y, device.id).toBeCloseTo(body.y + body.height, 3);
+      expect(foot.y, device.id).toBeGreaterThan(stand.y);
+    }
     for (const finish of device.finishes) {
       expect("color" in finish && finish.color, `${device.id} ${finish.id}`).toMatch(/^#[0-9A-F]{6}$/);
     }

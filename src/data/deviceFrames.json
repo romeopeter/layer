@@ -67,7 +67,7 @@
         {
           "id": "black",
           "label": "Black",
-          "color": "#444144"
+          "color": "#4F4C4F"
         },
         {
           "id": "glacier",
@@ -997,34 +997,66 @@
         0,
         0
       ],
+      "solid": "desktop",
+      "body": {
+        "x": 0,
+        "y": 0,
+        "width": 1,
+        "height": 0.81481,
+        "corners": [
+          0.02788,
+          0.02788,
+          0.02788,
+          0.02788
+        ]
+      },
+      "stand": {
+        "x": 0.38125,
+        "y": 0.81481,
+        "width": 0.2375,
+        "height": 0.18519
+      },
+      "foot": {
+        "x": 0.38125,
+        "y": 0.96481,
+        "width": 0.2375,
+        "height": 0.03519
+      },
       "finishes": [
         {
           "id": "default",
-          "label": "Silver"
+          "label": "Silver",
+          "color": "#C7C8CB"
         },
         {
           "id": "blue",
-          "label": "Blue"
+          "label": "Blue",
+          "color": "#A3BAD2"
         },
         {
           "id": "green",
-          "label": "Green"
+          "label": "Green",
+          "color": "#ACC6BC"
         },
         {
           "id": "pink",
-          "label": "Pink"
+          "label": "Pink",
+          "color": "#E7BBB3"
         },
         {
           "id": "purple",
-          "label": "Purple"
+          "label": "Purple",
+          "color": "#B2B2DD"
         },
         {
           "id": "orange",
-          "label": "Orange"
+          "label": "Orange",
+          "color": "#E4A58B"
         },
         {
           "id": "yellow",
-          "label": "Yellow"
+          "label": "Yellow",
+          "color": "#F2CC7E"
         }
       ]
     },
@@ -1047,10 +1079,36 @@
         0,
         0
       ],
+      "solid": "desktop",
+      "body": {
+        "x": 0,
+        "y": 0,
+        "width": 1,
+        "height": 0.77149,
+        "corners": [
+          0.00614,
+          0.00614,
+          0.00614,
+          0.00614
+        ]
+      },
+      "stand": {
+        "x": 0.38125,
+        "y": 0.77149,
+        "width": 0.2375,
+        "height": 0.22851
+      },
+      "foot": {
+        "x": 0.38125,
+        "y": 0.96488,
+        "width": 0.2375,
+        "height": 0.03512
+      },
       "finishes": [
         {
           "id": "default",
-          "label": "Silver"
+          "label": "Silver",
+          "color": "#C7C8CB"
         }
       ]
     },
@@ -1073,10 +1131,36 @@
         0,
         0
       ],
+      "solid": "desktop",
+      "body": {
+        "x": 0,
+        "y": 0,
+        "width": 1,
+        "height": 0.86957,
+        "corners": [
+          0.01536,
+          0.01536,
+          0.01536,
+          0.01536
+        ]
+      },
+      "stand": {
+        "x": 0.26563,
+        "y": 0.86957,
+        "width": 0.46875,
+        "height": 0.13043
+      },
+      "foot": {
+        "x": 0.30469,
+        "y": 0.96492,
+        "width": 0.39063,
+        "height": 0.03508
+      },
       "finishes": [
         {
           "id": "default",
-          "label": "Silver"
+          "label": "Silver",
+          "color": "#E2E3E4"
         }
       ]
     },
@@ -1099,10 +1183,32 @@
         0.17647,
         0.17647
       ],
+      "solid": "slab",
+      "body": {
+        "x": 0,
+        "y": 0,
+        "width": 0.94779,
+        "height": 1,
+        "corners": [
+          0.27696,
+          0.27732,
+          0.27731,
+          0.27799
+        ]
+      },
+      "buttons": [
+        {
+          "side": "right",
+          "from": 0.21842,
+          "to": 0.78158,
+          "out": 0.05221
+        }
+      ],
       "finishes": [
         {
           "id": "default",
-          "label": "Titanium"
+          "label": "Titanium",
+          "color": "#A39C95"
         }
       ]
     },
@@ -1125,10 +1231,32 @@
         0.18018,
         0.18018
       ],
+      "solid": "slab",
+      "body": {
+        "x": 0,
+        "y": 0,
+        "width": 0.96697,
+        "height": 1,
+        "corners": [
+          0.27555,
+          0.29156,
+          0.29002,
+          0.27555
+        ]
+      },
+      "buttons": [
+        {
+          "side": "right",
+          "from": 0.28421,
+          "to": 0.47368,
+          "out": 0.02402
+        }
+      ],
       "finishes": [
         {
           "id": "default",
-          "label": "Midnight"
+          "label": "Midnight",
+          "color": "#42484F"
         }
       ]
     }

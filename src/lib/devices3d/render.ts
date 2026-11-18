@@ -1,7 +1,9 @@
 import {
   CanvasTexture,
   Color,
+  CylinderGeometry,
   DirectionalLight,
+  DoubleSide,
   ExtrudeGeometry,
   Group,
   Matrix4,
@@ -25,8 +27,8 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import type { ImageTilt } from "@/lib/tilt";
 import type { Box } from "@/lib/mockups";
-import type { TiltBox } from "@/lib/tiltRender";
-import { solidBoxOf, solidTiltOf, solidViewOf, type SolidModel, type Slab } from "./bodies";
+import type { TiltBox, TurnPlane } from "@/lib/tiltRender";
+import { solidBoxOf, solidTiltOf, solidViewOf, type Block, type SolidModel, type Slab } from "./bodies";
 import { deckPicture } from "./keyboard";
 
 /*
@@ -53,12 +55,14 @@ export interface SolidPicture {
   width: number;
   height: number;
   tilt: ImageTilt;
+  /** What it turns about: its own middle, or a tilted layout's. */
+  plane: TurnPlane;
 }
 
 interface Kept {
   key: string;
   root: Group;
-  faces: { canvas: HTMLCanvasElement; texture: CanvasTexture; box: Box }[];
+  faces: { canvas: HTMLCanvasElement; texture: CanvasTexture; box: Box; color: string | null }[];
   frontVersion: number;
   dispose: () => void;
 }
@@ -119,6 +123,9 @@ const createRenderer = () => {
   const pmrem = new PMREMGenerator(renderer);
   const room = new RoomEnvironment();
   scene.environment = pmrem.fromScene(room, 0.04).texture;
+  // Turned so its dark floor is behind the viewer: anything facing straight out of the
+  // page would otherwise mirror one of its bright wall lights and go white.
+  scene.environmentRotation.set(-Math.PI / 2, 0, 0);
   room.dispose();
   pmrem.dispose();
   // A key light up and to the left, fixed to the viewer, so turning moves the highlights.
@@ -137,16 +144,25 @@ const createRenderer = () => {
     return texture;
   };
 
-  /** A face's picture: the front over the device's own colour, cut to `box`. */
-  const paintFace = (canvas: HTMLCanvasElement, front: HTMLCanvasElement, box: Box, picture: SolidPicture, color: string) => {
+  /** A face's picture: the front cut to `box`, over the device's own colour unless it's a cut-out. */
+  const paintFace = (
+    canvas: HTMLCanvasElement,
+    front: HTMLCanvasElement,
+    box: Box,
+    picture: SolidPicture,
+    color: string | null,
+  ) => {
     const across = front.width / picture.width;
     const down = front.height / picture.height;
     canvas.width = Math.max(1, Math.round(box.width * across));
     canvas.height = Math.max(1, Math.round(box.height * down));
     const g = canvas.getContext("2d");
     if (!g) return;
-    g.fillStyle = color;
-    g.fillRect(0, 0, canvas.width, canvas.height);
+    g.clearRect(0, 0, canvas.width, canvas.height);
+    if (color) {
+      g.fillStyle = color;
+      g.fillRect(0, 0, canvas.width, canvas.height);
+    }
     g.drawImage(front, -box.x * across, -box.y * down);
   };
 
@@ -164,7 +180,11 @@ const createRenderer = () => {
 
     const color = new Color(model.color);
     const metal = own(new MeshStandardMaterial({ color, metalness: 0.7, roughness: 0.32 }));
-    const back = own(new MeshStandardMaterial({ color, metalness: 0.25, roughness: 0.45 }));
+    // The back is broad and flat, so it catches the room's light: a little deeper, and
+    // softer, to keep its colour.
+    const back = own(
+      new MeshStandardMaterial({ color: color.clone().multiplyScalar(0.85), metalness: 0.2, roughness: 0.55, envMapIntensity: 0.6 }),
+    );
 
     const faceMaterial = (texture: CanvasTexture) =>
       own(
@@ -184,11 +204,11 @@ const createRenderer = () => {
         }),
       );
 
-    const addFace = (box: Box) => {
+    const addFace = (box: Box, over: string | null = model.color) => {
       const canvas = document.createElement("canvas");
-      paintFace(canvas, picture.front, box, picture, model.color);
+      paintFace(canvas, picture.front, box, picture, over);
       const texture = own(textureOf(canvas));
-      faces.push({ canvas, texture, box });
+      faces.push({ canvas, texture, box, color: over });
       return texture;
     };
 
@@ -217,49 +237,103 @@ const createRenderer = () => {
 
     slab(model.body);
 
-    for (const block of model.buttons) {
-      const geometry = own(
-        new RoundedBoxGeometry(block.width, block.height, block.depth, 2, Math.min(block.width, block.height, block.depth) * 0.4),
+    // Buttons, a laptop's base, a desktop's foot: rounded boxes, some with a face or deck.
+    const addBlock = (block: Block) => {
+      const holder = new Group();
+      if (block.hinge) {
+        holder.position.set(0, worldY(block.hinge.y, height), block.hinge.z);
+        holder.rotation.x = block.hinge.angle;
+      }
+      // Where its middle is, from whatever it hangs on.
+      const origin = { y: block.hinge ? worldY(block.hinge.y, height) : 0, z: block.hinge?.z ?? 0 };
+      const middle = {
+        x: worldX(block.x + block.width / 2, width),
+        y: worldY(block.y + block.height / 2, height) - origin.y,
+        z: block.z - block.depth / 2 - origin.z,
+      };
+      const round = Math.min(block.width, block.height, block.depth) * (block.face ? 0.25 : 0.4);
+      const solid = new Mesh(own(new RoundedBoxGeometry(block.width, block.height, block.depth, 3, round)), metal);
+      solid.position.set(middle.x, middle.y, middle.z);
+      holder.add(solid);
+
+      if (block.face) {
+        const face = new Mesh(
+          own(new PlaneGeometry(block.width - round * 2, block.height - round)),
+          faceMaterial(addFace({ x: block.x + round, y: block.y, width: block.width - round * 2, height: block.height - round })),
+        );
+        face.position.set(middle.x, middle.y + round / 2, middle.z + block.depth / 2 + block.depth * 0.001);
+        holder.add(face);
+      }
+      if (block.deck) {
+        const deckTexture = own(textureOf(deckPicture(model.color, block.depth / block.width)));
+        const deck = new Mesh(
+          own(new PlaneGeometry(block.width - round * 2, block.depth - round * 2)),
+          // Facing up, it catches the most light: a softer finish keeps its trackpad visible.
+          own(new MeshStandardMaterial({ map: deckTexture, color: 0xc8c8c8, metalness: 0.15, roughness: 0.7 })),
+        );
+        deck.rotation.x = -Math.PI / 2;
+        deck.position.set(middle.x, middle.y + block.height / 2 + block.height * 0.002, middle.z);
+        holder.add(deck);
+      }
+      root.add(holder);
+    };
+    model.blocks.forEach(addBlock);
+
+    // A desktop's stand: a cut-out of the artwork, seen from both sides.
+    for (const cutout of model.cutouts) {
+      if (cutout.box.width <= 0 || cutout.box.height <= 0) continue;
+      const plane = new Mesh(
+        own(new PlaneGeometry(cutout.box.width, cutout.box.height)),
+        own(
+          new MeshStandardMaterial({
+            map: addFace(cutout.box, null),
+            transparent: true,
+            alphaTest: 0.5,
+            side: DoubleSide,
+            metalness: 0.3,
+            roughness: 0.45,
+          }),
+        ),
       );
-      const button = new Mesh(geometry, metal);
-      button.position.set(
-        worldX(block.x + block.width / 2, width),
-        worldY(block.y + block.height / 2, height),
-        block.z - block.depth / 2,
+      plane.position.set(
+        worldX(cutout.box.x + cutout.box.width / 2, width),
+        worldY(cutout.box.y + cutout.box.height / 2, height),
+        cutout.z,
       );
-      root.add(button);
+      root.add(plane);
     }
 
-    const { base } = model;
-    if (base) {
-      // From the hinge: across is x, thickness goes down, depth comes towards the viewer.
-      const hinge = new Group();
-      hinge.position.set(worldX(base.box.x + base.box.width / 2, width), worldY(base.hinge.y, height), base.hinge.z);
-      hinge.rotation.x = base.drop;
-      const thick = base.box.height;
-      const round = Math.min(thick * 0.3, base.depth * 0.02);
-      const block = new Mesh(own(new RoundedBoxGeometry(base.box.width, thick, base.depth, 3, round)), metal);
-      block.position.set(0, -thick / 2, base.depth / 2);
-      hinge.add(block);
-
-      const deckTexture = own(textureOf(deckPicture(model.color, base.depth / base.box.width)));
-      const deck = new Mesh(
-        own(new PlaneGeometry(base.box.width - round * 2, base.depth - round * 2)),
-        // Facing up, it catches the most light: a softer finish keeps its trackpad visible.
-        own(new MeshStandardMaterial({ map: deckTexture, color: 0xc8c8c8, metalness: 0.15, roughness: 0.7 })),
+    // The camera on the back: a raised plate, lenses in rings, and a small light.
+    const { camera } = model;
+    if (camera) {
+      const backZ = -model.body.depth;
+      const plate = new Mesh(
+        own(new RoundedBoxGeometry(camera.box.width, camera.box.height, camera.height, 3, camera.box.width * 0.2)),
+        back,
       );
-      deck.rotation.x = -Math.PI / 2;
-      deck.position.set(0, thick * 0.002, base.depth / 2);
-      hinge.add(deck);
-
-      // Its front edge is the artwork's own strip.
-      const strip = new Mesh(
-        own(new PlaneGeometry(base.box.width - round * 2, thick - round)),
-        faceMaterial(addFace(base.box)),
+      plate.position.set(
+        worldX(camera.box.x + camera.box.width / 2, width),
+        worldY(camera.box.y + camera.box.height / 2, height),
+        backZ - camera.height / 2 + camera.height * 0.05,
       );
-      strip.position.set(0, -thick / 2, base.depth + thick * 0.002);
-      hinge.add(strip);
-      root.add(hinge);
+      root.add(plate);
+      // Dark glass. Seen head on, a mirror finish would show the room's lights instead.
+      const glass = own(
+        new MeshPhysicalMaterial({ color: 0x0b0b10, roughness: 0.25, metalness: 0, clearcoat: 0.4, envMapIntensity: 0.35 }),
+      );
+      const light = own(new MeshStandardMaterial({ color: 0xf2efe6, roughness: 0.3, metalness: 0 }));
+      const disc = (spot: { x: number; y: number; radius: number }, thick: number, material: Material, z: number) => {
+        const shape = new Mesh(own(new CylinderGeometry(spot.radius, spot.radius, thick, 48)), material);
+        shape.rotation.x = Math.PI / 2;
+        shape.position.set(worldX(spot.x, width), worldY(spot.y, height), z);
+        root.add(shape);
+      };
+      const face = backZ - camera.height;
+      for (const lens of camera.lenses) {
+        disc(lens, camera.height * 0.6, metal, face - camera.height * 0.25);
+        disc({ ...lens, radius: lens.radius * 0.74 }, camera.height * 0.62, glass, face - camera.height * 0.27);
+      }
+      if (camera.flash) disc(camera.flash, camera.height * 0.2, light, face - camera.height * 0.05);
     }
 
     return {
@@ -279,7 +353,7 @@ const createRenderer = () => {
     if (known && known.key === keyOf(picture)) {
       if (known.frontVersion !== picture.frontVersion) {
         for (const face of known.faces) {
-          paintFace(face.canvas, picture.front, face.box, picture, picture.model.color);
+          paintFace(face.canvas, picture.front, face.box, picture, face.color);
           face.texture.needsUpdate = true;
         }
         known.frontVersion = picture.frontVersion;
@@ -294,40 +368,45 @@ const createRenderer = () => {
 
   /** Draws the device turned into `out`, at `scale` pixels to each unit. Returns where it goes. */
   const render = (picture: SolidPicture, requestedScale: number, out: HTMLCanvasElement): TiltBox | null => {
-    const { model, tilt, width, height } = picture;
-    const box = solidBoxOf(model, tilt, width, height);
+    const { model, tilt, width, height, plane } = picture;
+    const box = solidBoxOf(model, tilt, plane);
     if (box.width <= 0 || box.height <= 0) return null;
-    const view = solidViewOf(model, tilt, width, height);
+    const view = solidViewOf(model, tilt, plane);
     const largest = Math.min(MAX_SIDE, renderer.capabilities.maxTextureSize);
     const scale = Math.min(requestedScale, largest / Math.max(box.width, box.height, 1));
     renderer.setSize(Math.max(1, Math.round(box.width * scale)), Math.max(1, Math.round(box.height * scale)), false);
 
     const { root } = modelFor(picture);
     // The same turn as a tilted picture: scaled, then rotateZ, rotateY and rotateX, with
-    // y flipped for three's world, which points up.
+    // y flipped for three's world, which points up. It's built about the image's middle,
+    // and turns about the plane's pivot.
     const turn = solidTiltOf(model, tilt);
-    const [ax, ay, az] = [turn.tiltX, turn.tiltY, turn.tiltZ].map((deg) => (deg * Math.PI) / 180);
+    const [ax, ay, az, spin] = [turn.tiltX, turn.tiltY, turn.tiltZ, plane.spin ?? 0].map((deg) => (deg * Math.PI) / 180);
     const size = tilt.scale * view.grow;
+    const pivot = { x: worldX(plane.pivot.x, width), y: worldY(plane.pivot.y, height) };
+    // Turned on the page, it turns with the page's axes: into them first, and back after.
     root.matrix
-      .makeRotationX(-ax)
+      .makeRotationZ(spin)
+      .multiply(new Matrix4().makeRotationX(-ax))
       .multiply(new Matrix4().makeRotationY(ay))
       .multiply(new Matrix4().makeRotationZ(-az))
       .multiply(new Matrix4().makeScale(size, size, size))
-      .multiply(new Matrix4().makeTranslation(0, 0, -view.middle));
+      .multiply(new Matrix4().makeRotationZ(-spin))
+      .multiply(new Matrix4().makeTranslation(-pivot.x, -pivot.y, -view.middle));
     root.matrixWorldNeedsUpdate = true;
     scene.add(root);
 
-    // Seen from straight in front of the image's centre, cut to just the device.
+    // Seen from straight in front of the pivot, cut to just the device.
     const near = view.distance * 0.02;
     const far = view.distance * 4 + Math.max(width, height) * 4;
     const reach = near / view.distance;
     camera.position.set(0, 0, view.distance);
     camera.updateMatrixWorld();
     camera.projectionMatrix.makePerspective(
-      worldX(box.x, width) * reach,
-      worldX(box.x + box.width, width) * reach,
-      worldY(box.y, height) * reach,
-      worldY(box.y + box.height, height) * reach,
+      (box.x - plane.pivot.x) * reach,
+      (box.x + box.width - plane.pivot.x) * reach,
+      (plane.pivot.y - box.y) * reach,
+      (plane.pivot.y - box.y - box.height) * reach,
       near,
       far,
     );

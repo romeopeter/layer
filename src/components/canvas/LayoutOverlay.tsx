@@ -1,9 +1,25 @@
-import { memo } from "react";
-import { Arrow, Circle, Group, Layer, Line, Rect, Text } from "react-konva";
+import { memo, useLayoutEffect, useMemo, useRef } from "react";
+import Konva from "konva";
+import { Arrow, Circle, Group, Image as KImage, Layer, Line, Rect, Text } from "react-konva";
 import { SYSTEM_FONTS } from "@/lib/constants";
-import { cardIdOf, type Arrangement, type LayoutDecor } from "@/lib/layouts";
+import { cardIdOf, type Arrangement, type LayoutDecor, type LayoutSurface } from "@/lib/layouts";
 import { gradientEnds } from "@/lib/background/drawSource";
+import { isTiltSupported, planeFrom, renderTilt, tiltBoxOf, tiltCorners, type TiltLook } from "@/lib/tiltRender";
 import type { CardFill, ImageElement } from "@/types";
+
+/** Turned parts are drawn at twice their size, so they're sharp in a 2× export too. */
+const TURN_SCALE = 2;
+const MAX_SIDE = 4096;
+
+/** A tilted layout's turn, for a part of it: its tilt, and the surface seen from the part. */
+const lookOn = (surface: LayoutSurface, width: number, height: number, node: { x: number; y: number; rotation: number }, cornerRadius = 0): TiltLook => ({
+  tilt: { ...surface.tilt, scale: 1 },
+  width,
+  height,
+  cornerRadius,
+  border: null,
+  plane: planeFrom(surface.pivot, surface.span, node),
+});
 
 /** Konva name the exporter hides before capture. */
 export const LAYOUT_SLOTS_LAYER_NAME = "layout-slots";
@@ -101,15 +117,66 @@ const Decor = ({ item }: { item: LayoutDecor }) => {
   );
 };
 
+/** Paints a card's fill into `canvas`, `scale` pixels to a unit. */
+const paintCard = (canvas: HTMLCanvasElement, fill: CardFill, width: number, height: number, scale: number) => {
+  canvas.width = Math.max(1, Math.round(width * scale));
+  canvas.height = Math.max(1, Math.round(height * scale));
+  const g = canvas.getContext("2d");
+  if (!g) return;
+  if (fill.kind === "solid") {
+    g.fillStyle = fill.color;
+  } else {
+    const { start, end } = gradientEnds(fill, width, height);
+    const gradient = g.createLinearGradient(start.x * scale, start.y * scale, end.x * scale, end.y * scale);
+    gradient.addColorStop(0, fill.from);
+    gradient.addColorStop(1, fill.to);
+    g.fillStyle = gradient;
+  }
+  g.fillRect(0, 0, canvas.width, canvas.height);
+};
+
 /**
  * The card behind one image in a layout. Artwork, so it exports. It sits where the
  * image does, turned the same way and as faded, so posing the image can pose it too.
+ * In a tilted layout it's drawn turned with the rest of the surface.
  */
 export const SlotCard = memo(
-  ({ el, pad, radius, fill }: { el: ImageElement; pad: number; radius: number; fill: CardFill }) => {
+  ({
+    el,
+    pad,
+    radius,
+    fill,
+    surface,
+  }: {
+    el: ImageElement;
+    pad: number;
+    radius: number;
+    fill: CardFill;
+    surface?: LayoutSurface | null;
+  }) => {
     const width = el.width + pad * 2;
     const height = el.height + pad * 2;
     const ends = fill.kind === "gradient" ? gradientEnds(fill, width, height) : null;
+    const turnedRef = useRef<Konva.Image>(null);
+    const out = useMemo(() => document.createElement("canvas"), []);
+    // The card's own corner is at -pad from the image's, which is where it's seen from.
+    const look = useMemo(
+      () =>
+        surface && isTiltSupported()
+          ? lookOn(surface, width, height, { x: el.x - pad, y: el.y - pad, rotation: el.rotation }, radius)
+          : null,
+      [surface, width, height, el.x, el.y, el.rotation, pad, radius],
+    );
+    const box = useMemo(() => (look ? tiltBoxOf(tiltCorners(look)) : null), [look]);
+    useLayoutEffect(() => {
+      if (!look) return;
+      const plain = document.createElement("canvas");
+      const scale = Math.min(TURN_SCALE, MAX_SIDE / Math.max(width, height, 1));
+      paintCard(plain, fill, width, height, scale);
+      renderTilt(plain, look, TURN_SCALE, out);
+      turnedRef.current?.getLayer()?.batchDraw();
+    }, [look, fill, width, height, out]);
+
     return (
       <Group
         id={cardIdOf(el.id)}
@@ -120,31 +187,75 @@ export const SlotCard = memo(
         visible={!el.hidden}
         listening={false}
       >
-        <Rect
-          x={-pad}
-          y={-pad}
-          width={width}
-          height={height}
-          cornerRadius={radius}
-          fill={fill.kind === "solid" ? fill.color : undefined}
-          fillLinearGradientStartPoint={ends?.start}
-          fillLinearGradientEndPoint={ends?.end}
-          fillLinearGradientColorStops={fill.kind === "gradient" ? [0, fill.from, 1, fill.to] : undefined}
-        />
+        {look && box ? (
+          <KImage ref={turnedRef} name="turned-card" image={out} x={-pad + box.x} y={-pad + box.y} width={box.width} height={box.height} />
+        ) : (
+          <Rect
+            x={-pad}
+            y={-pad}
+            width={width}
+            height={height}
+            cornerRadius={radius}
+            fill={fill.kind === "solid" ? fill.color : undefined}
+            fillLinearGradientStartPoint={ends?.start}
+            fillLinearGradientEndPoint={ends?.end}
+            fillLinearGradientColorStops={fill.kind === "gradient" ? [0, fill.from, 1, fill.to] : undefined}
+          />
+        )}
       </Group>
     );
   },
 );
 SlotCard.displayName = "SlotCard";
 
-/** Badges, arrows, labels and dividers. Part of the artwork, so it lives with the content. */
-export const LayoutDecorNodes = ({ arrangement }: { arrangement: Arrangement }) => (
-  <Group listening={false}>
-    {arrangement.decor.map((item, i) => (
-      <Decor key={i} item={item} />
-    ))}
-  </Group>
-);
+/**
+ * Badges, arrows, labels and dividers. Part of the artwork, so it lives with the content.
+ * In a tilted layout they're drawn flat, hidden, and shown turned with the rest of the
+ * surface: one picture of them all, turned as one.
+ */
+export const LayoutDecorNodes = ({
+  arrangement,
+  surface,
+}: {
+  arrangement: Arrangement;
+  surface?: LayoutSurface | null;
+}) => {
+  const flatRef = useRef<Konva.Group>(null);
+  const turnedRef = useRef<Konva.Image>(null);
+  const out = useMemo(() => document.createElement("canvas"), []);
+  const turning = !!surface && isTiltSupported() && arrangement.decor.length > 0;
+
+  useLayoutEffect(() => {
+    const flat = flatRef.current;
+    const turned = turnedRef.current;
+    if (!turning || !surface || !flat || !turned) return;
+    // Where they are on the canvas, whatever the camera is doing.
+    const bounds = flat.getClientRect({ relativeTo: flat.getParent() ?? undefined });
+    if (bounds.width <= 0 || bounds.height <= 0) return;
+    const copy = flat.clone({ visible: true }) as Konva.Group;
+    const holder = new Konva.Layer();
+    holder.add(copy);
+    const pixelRatio = Math.min(TURN_SCALE, MAX_SIDE / Math.max(bounds.width, bounds.height));
+    const picture = copy.toCanvas({ ...bounds, pixelRatio });
+    holder.destroy();
+    const look = lookOn(surface, bounds.width, bounds.height, { x: bounds.x, y: bounds.y, rotation: 0 });
+    const box = renderTilt(picture, look, TURN_SCALE, out);
+    if (!box) return;
+    turned.setAttrs({ image: out, x: bounds.x + box.x, y: bounds.y + box.y, width: box.width, height: box.height });
+    turned.getLayer()?.batchDraw();
+  }, [turning, surface, arrangement, out]);
+
+  return (
+    <>
+      <Group ref={flatRef} name="layout-decor" listening={false} visible={!turning}>
+        {arrangement.decor.map((item, i) => (
+          <Decor key={i} item={item} />
+        ))}
+      </Group>
+      {turning && <KImage ref={turnedRef} name="turned-decor" image={out} listening={false} />}
+    </>
+  );
+};
 
 /** Empty slots and the drop highlight: editing aids, hidden from exports. */
 export const LayoutSlotsLayer = ({

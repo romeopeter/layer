@@ -366,17 +366,17 @@ const measureHole = async ({ src, thumbSize }) => {
   };
 };
 
-/** Turned into a solid body in 3D: a slab, or a lid on a base. The rest turn as flat cards. */
+/** How each device is built in 3D: a slab, a lid on a base, or a display on a stand. */
 const LAPTOPS = new Set(["macbook-pro", "macbook", "laptop", "surface-book"]);
-const solidOf = (device) =>
-  LAPTOPS.has(device.id) ? "laptop" : device.group === "Phones" || device.group === "Tablets" ? "slab" : null;
+const solidOf = (device) => (LAPTOPS.has(device.id) ? "laptop" : device.group === "Computers" ? "desktop" : "slab");
 
 /**
  * Runs in the page. A device's solid body, measured from its artwork in its pixels:
- * the outline without its buttons, with each corner's radius; the buttons; and a
- * laptop's base, the wider strip below its lid.
+ * the outline without its buttons, with each corner's radius; the buttons; a laptop's
+ * base, the wider strip below its lid; and a desktop's stand below its display, with
+ * the foot it rests on.
  */
-const measureBody = async ({ src, solid }) => {
+const measureBody = async ({ src, solid, screen }) => {
   const image = new Image();
   image.src = src;
   await image.decode();
@@ -423,10 +423,18 @@ const measureBody = async ({ src, solid }) => {
     return out;
   };
 
-  // A laptop's lid is the upper part; its base is wider, below it.
-  const sideRows = solid === "laptop" ? range(height * 0.15, height * 0.5) : range(height * 0.15, height * 0.85);
-  const left = mode(sideRows.map((y) => rowStart[y]));
-  const right = mode(sideRows.map((y) => rowEnd[y]));
+  // A laptop's lid and a desktop's display are the upper part, with something below.
+  const sideRows = solid === "slab" ? range(height * 0.15, height * 0.85) : range(height * 0.1, height * 0.45);
+  let left = mode(sideRows.map((y) => rowStart[y]));
+  let right = mode(sideRows.map((y) => rowEnd[y]));
+  // Where buttons cover most of a side (a watch's crown guard), no row shows its edge. A
+  // side much further from the screen's middle than the other is mirrored from it.
+  const middle = (screen.x + screen.width / 2) * width;
+  const reach = Math.min(middle - left, right - middle);
+  if (Math.abs(middle - left - (right - middle)) > width * 0.03) {
+    left = Math.round(middle - reach);
+    right = Math.round(middle + reach);
+  }
   const middleColumns = range(left + (right - left) * 0.2, right - (right - left) * 0.2);
   const top = mode(middleColumns.map((x) => colStart[x]));
 
@@ -454,6 +462,29 @@ const measureBody = async ({ src, solid }) => {
     bottom = baseTop - 1;
   }
 
+  let stand = null;
+  let foot = null;
+  if (solid === "desktop") {
+    // The display ends where the outline narrows to its stand.
+    const displayWidth = right - left;
+    const across = (y) => (rowStart[y] < 0 ? 0 : rowEnd[y] - rowStart[y]);
+    let displayBottom = Math.round(height * 0.45);
+    while (displayBottom < height - 1 && across(displayBottom + 1) >= displayWidth * 0.8) displayBottom += 1;
+    let last = height - 1;
+    while (last > displayBottom && rowStart[last] < 0) last -= 1;
+    const standRows = range(displayBottom + 1, last + 1);
+    if (!standRows.length) throw new Error("No stand below the display");
+    const standLeft = Math.min(...standRows.map((y) => rowStart[y]));
+    const standRight = Math.max(...standRows.map((y) => rowEnd[y]));
+    stand = { x: standLeft, y: displayBottom + 1, width: standRight + 1 - standLeft, height: last - displayBottom };
+    // The foot is the strip it stands on, along the bottom.
+    const footRows = range(last + 1 - Math.max(2, Math.round(height * 0.035)), last + 1);
+    const footLeft = mode(footRows.map((y) => rowStart[y]));
+    const footRight = mode(footRows.map((y) => rowEnd[y]));
+    foot = { x: footLeft, y: footRows[0], width: footRight + 1 - footLeft, height: footRows.length };
+    bottom = displayBottom;
+  }
+
   /**
    * A corner's radius, from how much of the box's corner is empty: a quarter circle
    * leaves r²(1 − π/4). That suits the smooth corners phones have as well as round ones.
@@ -468,6 +499,7 @@ const measureBody = async ({ src, solid }) => {
     }
     return Math.sqrt(empty / (1 - Math.PI / 4));
   };
+  // A lid's bottom corners are its hinge.
   const corners =
     solid === "laptop"
       ? [cornerRadius(true, true), cornerRadius(true, false), 0, 0]
@@ -513,6 +545,8 @@ const measureBody = async ({ src, solid }) => {
     corners,
     buttons,
     base,
+    stand,
+    foot,
   };
 };
 
@@ -676,21 +710,38 @@ const renderAll = async (browser) => {
   return devices;
 };
 
-/** Adds a solid body to each phone, tablet and laptop, measured from its PNGs. */
+/**
+ * The band round a slab's edge, at mid-height, on a side with no button there. A watch's
+ * sides carry its crown and buttons, which can be coloured, so it's along its top.
+ */
+const edgeArea = (body, buttons, onTop) => {
+  const band = { from: body.y + body.height * 0.45, to: body.y + body.height * 0.55 };
+  const clear = (side) => !buttons.some((b) => b.side === side && b.from < band.to && b.to > band.from);
+  const across = Math.max(3, Math.round(body.width * 0.015));
+  const y = Math.round(band.from);
+  const height = Math.round(band.to - band.from);
+  if (!onTop && clear("left")) return { x: body.x, y, width: across, height };
+  if (!onTop && clear("right")) return { x: body.x + body.width - across, y, width: across, height };
+  // Along the top instead, a quarter of the way in.
+  return {
+    x: Math.round(body.x + body.width * 0.2),
+    y: body.y,
+    width: Math.round(body.width * 0.1),
+    height: Math.max(3, Math.round(body.height * 0.015)),
+  };
+};
+
+/** Adds a solid body to each device, measured from its PNGs. */
 const measureSolids = async (browser, devices) => {
   const page = await (await browser.newContext()).newPage();
   const measured = [];
   for (const device of devices) {
     // What a device had before, from an earlier run, is measured again.
-    const { body: _body, base: _base, buttons: _buttons, finishes, ...rest } = device;
+    const { body: _body, base: _base, buttons: _buttons, stand: _stand, foot: _foot, finishes, ...rest } = device;
     const plainFinishes = finishes.map(({ id, label }) => ({ id, label }));
     const solid = solidOf(device);
-    if (!solid) {
-      measured.push({ ...rest, finishes: plainFinishes });
-      continue;
-    }
     const fileOf = (finish) => readFileSync(new URL(`${device.id}-${finish}.png`, OUTPUT_DIR));
-    const shape = await page.evaluate(measureBody, { src: toDataUrl(fileOf(finishes[0].id)), solid });
+    const shape = await page.evaluate(measureBody, { src: toDataUrl(fileOf(finishes[0].id)), solid, screen: rest.screen });
     const across = (value) => fraction(value / shape.width);
     const down = (value) => fraction(value / shape.height);
     const boxOf = (box) => ({ x: across(box.x), y: down(box.y), width: across(box.width), height: down(box.height) });
@@ -704,21 +755,17 @@ const measureSolids = async (browser, devices) => {
       screen.y + screen.height <= down(body.y + body.height) + 0.001;
     if (!inside) throw new Error(`${device.id}: the screen isn't inside the body`);
 
-    // The sides take the colour of the frame's edge; a laptop's, of its base.
-    const sampleArea = shape.base
+    // The sides take the colour of the frame's edge; a laptop's, of its base; a desktop's,
+    // of its stand.
+    const strip = shape.base ?? shape.stand;
+    const sampleArea = strip
       ? {
-          x: Math.round(shape.base.x + shape.base.width * 0.2),
-          y: Math.round(shape.base.y + shape.base.height * 0.3),
-          width: Math.max(1, Math.round(shape.base.width * 0.15)),
-          height: Math.max(1, Math.round(shape.base.height * 0.4)),
+          x: Math.round(strip.x + strip.width * (shape.base ? 0.2 : 0.4)),
+          y: Math.round(strip.y + strip.height * 0.3),
+          width: Math.max(1, Math.round(strip.width * 0.15)),
+          height: Math.max(1, Math.round(strip.height * 0.4)),
         }
-      : {
-          // The band round the edge, at mid-height, clear of any buttons.
-          x: body.x,
-          y: Math.round(body.y + body.height * 0.45),
-          width: Math.max(3, Math.round(body.width * 0.015)),
-          height: Math.round(body.height * 0.1),
-        };
+      : edgeArea(body, shape.buttons, device.group === "Watches");
     const colored = [];
     for (const finish of plainFinishes) {
       const color = await page.evaluate(sampleColor, { src: toDataUrl(fileOf(finish.id)), area: sampleArea });
@@ -747,6 +794,7 @@ const measureSolids = async (browser, devices) => {
           }
         : {}),
       ...(shape.base ? { base: boxOf(shape.base) } : {}),
+      ...(shape.stand ? { stand: boxOf(shape.stand), foot: boxOf(shape.foot) } : {}),
       finishes: colored,
     });
     console.log(
