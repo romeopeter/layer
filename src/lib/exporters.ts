@@ -13,6 +13,7 @@ import { MARK_HANDLES_LAYER_NAME } from "../components/canvas/MarkHandles";
 import { CROP_LAYER_NAME } from "../components/canvas/CropOverlay";
 import { LAYOUT_SLOTS_LAYER_NAME } from "../components/canvas/LayoutOverlay";
 import { ZOOM_SPOTS_LAYER_NAME } from "../components/canvas/ZoomSpotsLayer";
+import { holdGifsOnFirstFrame } from "./gif/player";
 
 const dataURLtoBlob = (dataUrl: string): Blob => {
   const [meta, b64] = dataUrl.split(",");
@@ -48,10 +49,13 @@ export const withOverlaysHidden = async <T,>(
   ];
   const visible = overlays.map((node) => node.visible());
   overlays.forEach((node) => node.visible(false));
+  // A still export shows each GIF's first frame; an animation export then poses each moment.
+  const letGifsGo = holdGifsOnFirstFrame();
 
   try {
     return await fn();
   } finally {
+    letGifsGo();
     overlays.forEach((node, index) => node.visible(visible[index]));
     stage.batchDraw();
   }

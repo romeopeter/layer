@@ -54,7 +54,7 @@ export const CustomizePanel = ({ onOpenModal }: { onOpenModal: () => void }) => 
       />
       <SwitchRow
         label="REDUCE MOTION"
-        description="Menus, dialogs and panels appear without moving. Follows your system until you change it."
+        description="Menus, dialogs and panels appear without moving, and GIFs stay on their first frame. Follows your system until you change it."
         checked={reducesMotion(preferences)}
         onCheckedChange={(reduceMotion) => setPreferences({ reduceMotion })}
       />

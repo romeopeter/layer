@@ -10,7 +10,6 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   SectionLabel,
-  LabeledSlider,
   ColorRow,
   Linebreak,
 } from "./primitives";
@@ -20,6 +19,7 @@ import { ShuffleRow } from "./background/ShuffleRow";
 import { SavedBackgrounds } from "./background/SavedBackgrounds";
 import { EffectsControls } from "./background/EffectsControls";
 import { choiceClass } from "./choice";
+import { GradientControls } from "./GradientControls";
 import { IMAGE_FILE_TYPES, readImageFile } from "@/lib/importers";
 import { showError } from "@/lib/host";
 
@@ -36,15 +36,6 @@ const SWATCHES = [
   "#534AB7",
   "#AFA9EC",
   "#EEEDFE",
-];
-
-const GRADIENTS = [
-  { from: "#6E5BFF", to: "#3FCBA6" },
-  { from: "#EF9F27", to: "#FF5577" },
-  { from: "#0F0E1A", to: "#534AB7" },
-  { from: "#FAEEDA", to: "#EF9F27" },
-  { from: "#1D9E75", to: "#085041" },
-  { from: "#AFA9EC", to: "#3C3489" },
 ];
 
 export const BackgroundPanel = () => {
@@ -115,60 +106,7 @@ export const BackgroundPanel = () => {
 
         {bg.mode === "gradient" && (
           <div className="w-full space-y-2.5">
-            <SectionLabel>GRADIENT</SectionLabel>
-            <div
-              className="h-3 rounded border border-hairline"
-              style={{
-                background: `linear-gradient(90deg, ${bg.gradient.from}, ${bg.gradient.to})`,
-              }}
-            />
-            <ColorRow
-              value={bg.gradient.from}
-              label="FROM"
-              onChange={(v) => setBg({ gradient: { ...bg.gradient, from: v } })}
-            />
-            <ColorRow
-              value={bg.gradient.to}
-              label="TO"
-              onChange={(v) => setBg({ gradient: { ...bg.gradient, to: v } })}
-            />
-            <LabeledSlider
-              label="ANGLE"
-              unit="°"
-              min={0}
-              max={360}
-              value={bg.gradient.angle}
-              onChange={(v) =>
-                setBg({ gradient: { ...bg.gradient, angle: v } })
-              }
-            />
-
-            <div id="gradient-present">
-              <SectionLabel>GRADIENT PRESETS</SectionLabel>
-              <div className="grid grid-cols-6 gap-1.5">
-                {GRADIENTS.map((g, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    aria-label={`Gradient ${i + 1}`}
-                    onClick={() =>
-                      setBg({
-                        mode: "gradient",
-                        gradient: { ...g, angle: 135 },
-                      })
-                    }
-                    aria-pressed={bg.mode === "gradient" && bg.gradient.from === g.from && bg.gradient.to === g.to}
-                    className={cn(
-                      "aspect-square cursor-pointer rounded-md border transition-colors",
-                      choiceClass(bg.mode === "gradient" && bg.gradient.from === g.from && bg.gradient.to === g.to),
-                    )}
-                    style={{
-                      background: `linear-gradient(135deg, ${g.from}, ${g.to})`,
-                    }}
-                  />
-                ))}
-              </div>
-            </div>
+            <GradientControls value={bg.gradient} onChange={(gradient) => setBg({ gradient })} />
             <ShuffleRow mode="gradient" />
           </div>
         )}

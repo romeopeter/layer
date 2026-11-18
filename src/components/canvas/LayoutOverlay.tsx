@@ -1,6 +1,9 @@
+import { memo } from "react";
 import { Arrow, Circle, Group, Layer, Line, Rect, Text } from "react-konva";
 import { SYSTEM_FONTS } from "@/lib/constants";
-import type { Arrangement, LayoutDecor } from "@/lib/layouts";
+import { cardIdOf, type Arrangement, type LayoutDecor } from "@/lib/layouts";
+import { gradientEnds } from "@/lib/background/drawSource";
+import type { CardFill, ImageElement } from "@/types";
 
 /** Konva name the exporter hides before capture. */
 export const LAYOUT_SLOTS_LAYER_NAME = "layout-slots";
@@ -16,6 +19,20 @@ const SLOT_STROKE = "rgba(255,255,255,0.55)";
 const DROP_FILL = "rgba(29,158,117,0.3)";
 
 const Decor = ({ item }: { item: LayoutDecor }) => {
+  if (item.kind === "divider") {
+    const w = item.width;
+    return (
+      <Line
+        points={item.points}
+        stroke={item.color}
+        strokeWidth={w}
+        // A dot is a dash too short to see, with round ends.
+        dash={item.style === "dashed" ? [w * 4, w * 3] : item.style === "dotted" ? [0.001, w * 2.2] : undefined}
+        lineCap={item.style === "dotted" ? "round" : "butt"}
+      />
+    );
+  }
+
   if (item.kind === "arrow") {
     return (
       <Arrow
@@ -84,7 +101,43 @@ const Decor = ({ item }: { item: LayoutDecor }) => {
   );
 };
 
-/** Badges, arrows and labels. Part of the artwork, so it lives with the content. */
+/**
+ * The card behind one image in a layout. Artwork, so it exports. It sits where the
+ * image does, turned the same way and as faded, so posing the image can pose it too.
+ */
+export const SlotCard = memo(
+  ({ el, pad, radius, fill }: { el: ImageElement; pad: number; radius: number; fill: CardFill }) => {
+    const width = el.width + pad * 2;
+    const height = el.height + pad * 2;
+    const ends = fill.kind === "gradient" ? gradientEnds(fill, width, height) : null;
+    return (
+      <Group
+        id={cardIdOf(el.id)}
+        x={el.x}
+        y={el.y}
+        rotation={el.rotation}
+        opacity={el.opacity}
+        visible={!el.hidden}
+        listening={false}
+      >
+        <Rect
+          x={-pad}
+          y={-pad}
+          width={width}
+          height={height}
+          cornerRadius={radius}
+          fill={fill.kind === "solid" ? fill.color : undefined}
+          fillLinearGradientStartPoint={ends?.start}
+          fillLinearGradientEndPoint={ends?.end}
+          fillLinearGradientColorStops={fill.kind === "gradient" ? [0, fill.from, 1, fill.to] : undefined}
+        />
+      </Group>
+    );
+  },
+);
+SlotCard.displayName = "SlotCard";
+
+/** Badges, arrows, labels and dividers. Part of the artwork, so it lives with the content. */
 export const LayoutDecorNodes = ({ arrangement }: { arrangement: Arrangement }) => (
   <Group listening={false}>
     {arrangement.decor.map((item, i) => (

@@ -15,7 +15,8 @@ export const fileToDataURL = (file: Blob): Promise<string> =>
   });
 
 /** What every image picker accepts. HEIC is listed by name too: some systems give it no type. */
-export const IMAGE_FILE_TYPES = "image/png,image/jpeg,image/webp,image/svg+xml,image/heic,image/heif,.heic,.heif";
+export const IMAGE_FILE_TYPES =
+  "image/png,image/jpeg,image/webp,image/gif,image/svg+xml,image/heic,image/heif,.heic,.heif";
 
 /** An image file as a data URL, with a HEIC photo turned into JPEG or PNG first. Throws a message for the user. */
 export const readImageFile = async (file: Blob): Promise<string> => fileToDataURL(await usableImage(file));

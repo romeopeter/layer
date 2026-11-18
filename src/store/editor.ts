@@ -61,8 +61,8 @@ import { DEFAULT_MARK_STYLES, shapeDefaults } from "../lib/markTools";
 import {
   arrangeLayout,
   fittedCanvas,
-  layoutOf,
   newLayout,
+  normaliseLayout,
   settleLayout,
   withoutLayoutCrop,
 } from "../lib/layouts";
@@ -280,6 +280,8 @@ interface EditorState {
   addLogo: (src: string, naturalWidth: number, naturalHeight: number) => string;
   /** Records a picture's size once loaded, for images saved without it. Not an edit. */
   setNaturalSize: (id: string, width: number, height: number) => void;
+  /** Records that a picture is an animated GIF, once it's decoded, or that it isn't. Not an edit. */
+  setGifInfo: (id: string, gif: ImageElement["gif"]) => void;
   setLayout: (id: LayoutId | null) => void;
   updateLayout: (patch: Partial<CanvasLayout>) => void;
   setSlotFocus: (index: number, focus: { x: number; y: number }) => void;
@@ -738,6 +740,9 @@ export const useEditor = create<EditorState>((set, get) => ({
       get().updateElement(id, { naturalWidth, naturalHeight } as Partial<LayerElement>),
     ),
 
+  setGifInfo: (id, gif) =>
+    history.silently(() => get().updateElement(id, { gif } as Partial<LayerElement>)),
+
   setLayout: (id) => {
     const { layout, elements } = get();
     const bake = (keep: Set<string | null>) =>
@@ -781,9 +786,11 @@ export const useEditor = create<EditorState>((set, get) => ({
     const { layout } = get();
     if (!layout || !layout.slots[a] || !layout.slots[b]) return;
     const slots = layout.slots.slice();
-    // The focus belongs to the picture it was chosen for, so it moves too.
+    // The focus belongs to the picture it was chosen for, so it moves too, as does
+    // being in front. Card fills and labels belong to the place, so they stay.
     [slots[a], slots[b]] = [slots[b], slots[a]];
-    set({ layout: { ...layout, slots } });
+    const front = layout.front === a ? b : layout.front === b ? a : layout.front;
+    set({ layout: { ...layout, slots, front } });
   },
 
   fillSlot: (index, src, width, height) => {
@@ -1029,10 +1036,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       watermark: normaliseWatermark(project.watermark),
       motion: normaliseMotion(project.motion),
       previewing: false,
-      layout:
-        project.layout && layoutOf(project.layout.id) && Array.isArray(project.layout.slots)
-          ? project.layout
-          : null,
+      layout: normaliseLayout(project.layout),
       selectedIds: [],
     });
     history.reset();

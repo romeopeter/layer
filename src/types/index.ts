@@ -118,6 +118,11 @@ export interface ImageElement extends BaseElement {
   naturalHeight?: number;
   /** Non-destructive edits. `src` stays the original. */
   edit?: ImageEdit;
+  /**
+   * An animated GIF: how many frames, and one loop's length in milliseconds.
+   * Measured when the picture loads, never edited. Absent for anything still.
+   */
+  gif?: { frames: number; duration: number };
 }
 
 /** Each is -100 to 100, where 0 changes nothing. */
@@ -319,12 +324,38 @@ export interface LayoutSlot {
   focus?: { x: number; y: number };
 }
 
+/** A line in the gap between neighbouring images, in rows and columns. */
+export interface LayoutDivider {
+  style: "none" | "solid" | "dashed" | "dotted";
+  color: string;
+  /** 1 to 10, sized from the canvas's shorter side. */
+  width: number;
+}
+
+/** What fills one card. */
+export type CardFill = { kind: "solid"; color: string } | ({ kind: "gradient" } & BackgroundGradient);
+
+/** A card behind each image in the layout. */
+export interface LayoutCards {
+  show: boolean;
+  /** 0 to 100: room around each image. */
+  padding: number;
+  /** 0 to 100: how round the card's corners are. */
+  corners: number;
+  /** One for each slot, by position: they stay put when images swap. */
+  fills: CardFill[];
+}
+
 /** Images in `slots` follow this: their place and size are worked out, not set by hand. */
 export interface CanvasLayout {
   id: LayoutId;
   align: LayoutAlign;
   /** 0 to 100. */
   spacing: number;
+  /** 0 to 100: how much overlap layouts overlap. Spacing is for the others. */
+  overlap: number;
+  /** The slot drawn in front. The last one when unset. */
+  front?: number;
   /** 30 to 100: how much of the canvas the layout fills. */
   scale: number;
   sameWidth: boolean;
@@ -332,6 +363,8 @@ export interface CanvasLayout {
   showLabels: boolean;
   labels: string[];
   slots: LayoutSlot[];
+  divider: LayoutDivider;
+  cards: LayoutCards;
 }
 
 /** One of nine places on the canvas: the corners, the edges' middles, and the centre. */
