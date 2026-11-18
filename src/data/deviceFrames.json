@@ -19,22 +19,65 @@
         0.14479,
         0.14479
       ],
+      "solid": "slab",
+      "body": {
+        "x": 0.00683,
+        "y": 0,
+        "width": 0.98748,
+        "height": 1,
+        "corners": [
+          0.18229,
+          0.18229,
+          0.18229,
+          0.18229
+        ]
+      },
+      "buttons": [
+        {
+          "side": "left",
+          "from": 0.20547,
+          "to": 0.25159,
+          "out": 0.00683
+        },
+        {
+          "side": "left",
+          "from": 0.28528,
+          "to": 0.36012,
+          "out": 0.00683
+        },
+        {
+          "side": "left",
+          "from": 0.38001,
+          "to": 0.45485,
+          "out": 0.00683
+        },
+        {
+          "side": "right",
+          "from": 0.31124,
+          "to": 0.42944,
+          "out": 0.00569
+        }
+      ],
       "finishes": [
         {
           "id": "silver",
-          "label": "Silver"
+          "label": "Silver",
+          "color": "#D4D4D4"
         },
         {
           "id": "black",
-          "label": "Black"
+          "label": "Black",
+          "color": "#444144"
         },
         {
           "id": "glacier",
-          "label": "Glacier"
+          "label": "Glacier",
+          "color": "#CAD4E2"
         },
         {
           "id": "burgundy",
-          "label": "Burgundy"
+          "label": "Burgundy",
+          "color": "#70494F"
         }
       ]
     },
@@ -57,14 +100,49 @@
         0.11375,
         0.01562
       ],
+      "solid": "slab",
+      "body": {
+        "x": 0,
+        "y": 0.00386,
+        "width": 0.9951,
+        "height": 0.99614,
+        "corners": [
+          0.04317,
+          0.14406,
+          0.14406,
+          0.04317
+        ]
+      },
+      "buttons": [
+        {
+          "side": "right",
+          "from": 0.28762,
+          "to": 0.44581,
+          "out": 0.0049
+        },
+        {
+          "side": "top",
+          "from": 0.46056,
+          "to": 0.58942,
+          "out": 0.00539
+        },
+        {
+          "side": "top",
+          "from": 0.6193,
+          "to": 0.74816,
+          "out": 0.00539
+        }
+      ],
       "finishes": [
         {
           "id": "night-sky",
-          "label": "Night Sky"
+          "label": "Night Sky",
+          "color": "#3E4B61"
         },
         {
           "id": "star-white",
-          "label": "Star White"
+          "label": "Star White",
+          "color": "#7D7A70"
         }
       ]
     },
@@ -87,34 +165,80 @@
         0.14531,
         0.14531
       ],
+      "solid": "slab",
+      "body": {
+        "x": 0.00686,
+        "y": 0,
+        "width": 0.98684,
+        "height": 1,
+        "corners": [
+          0.17842,
+          0.17842,
+          0.17842,
+          0.17842
+        ]
+      },
+      "buttons": [
+        {
+          "side": "left",
+          "from": 0.20493,
+          "to": 0.25118,
+          "out": 0.00686
+        },
+        {
+          "side": "left",
+          "from": 0.28496,
+          "to": 0.36001,
+          "out": 0.00686
+        },
+        {
+          "side": "left",
+          "from": 0.37995,
+          "to": 0.455,
+          "out": 0.00686
+        },
+        {
+          "side": "right",
+          "from": 0.31099,
+          "to": 0.42897,
+          "out": 0.00629
+        }
+      ],
       "finishes": [
         {
           "id": "black",
-          "label": "Black"
+          "label": "Black",
+          "color": "#767778"
         },
         {
           "id": "white",
-          "label": "White"
+          "label": "White",
+          "color": "#CBCBCA"
         },
         {
           "id": "mist-blue",
-          "label": "Mist Blue"
+          "label": "Mist Blue",
+          "color": "#AAB9D2"
         },
         {
           "id": "sage",
-          "label": "Sage"
+          "label": "Sage",
+          "color": "#99A884"
         },
         {
           "id": "lavender",
-          "label": "Lavender"
+          "label": "Lavender",
+          "color": "#CAC1D5"
         },
         {
           "id": "cosmic-orange",
-          "label": "Cosmic Orange"
+          "label": "Cosmic Orange",
+          "color": "#FBB885"
         },
         {
           "id": "deep-blue",
-          "label": "Deep Blue"
+          "label": "Deep Blue",
+          "color": "#727A90"
         }
       ]
     },
@@ -137,22 +261,65 @@
         0.11343,
         0.11343
       ],
+      "solid": "slab",
+      "body": {
+        "x": 0.00463,
+        "y": 0,
+        "width": 0.99074,
+        "height": 1,
+        "corners": [
+          0.15734,
+          0.15735,
+          0.15735,
+          0.15734
+        ]
+      },
+      "buttons": [
+        {
+          "side": "left",
+          "from": 0.13249,
+          "to": 0.16935,
+          "out": 0.00463
+        },
+        {
+          "side": "left",
+          "from": 0.20161,
+          "to": 0.27304,
+          "out": 0.00463
+        },
+        {
+          "side": "left",
+          "from": 0.29378,
+          "to": 0.36521,
+          "out": 0.00463
+        },
+        {
+          "side": "right",
+          "from": 0.23041,
+          "to": 0.34562,
+          "out": 0.00463
+        }
+      ],
       "finishes": [
         {
           "id": "default",
-          "label": "Purple"
+          "label": "Purple",
+          "color": "#827A90"
         },
         {
           "id": "black",
-          "label": "Black"
+          "label": "Black",
+          "color": "#C3C1C0"
         },
         {
           "id": "silver",
-          "label": "Silver"
+          "label": "Silver",
+          "color": "#F2F3F3"
         },
         {
           "id": "gold",
-          "label": "Gold"
+          "label": "Gold",
+          "color": "#EBDAB0"
         }
       ]
     },
@@ -175,22 +342,53 @@
         0.10917,
         0.10917
       ],
+      "solid": "slab",
+      "body": {
+        "x": 0,
+        "y": 0,
+        "width": 0.99345,
+        "height": 1,
+        "corners": [
+          0.16098,
+          0.16098,
+          0.16098,
+          0.16097
+        ]
+      },
+      "buttons": [
+        {
+          "side": "right",
+          "from": 0.27896,
+          "to": 0.35677,
+          "out": 0.00655
+        },
+        {
+          "side": "right",
+          "from": 0.40383,
+          "to": 0.54007,
+          "out": 0.00655
+        }
+      ],
       "finishes": [
         {
           "id": "obsidian",
-          "label": "Obsidian"
+          "label": "Obsidian",
+          "color": "#565959"
         },
         {
           "id": "frost",
-          "label": "Frost"
+          "label": "Frost",
+          "color": "#D4DBEE"
         },
         {
           "id": "indigo",
-          "label": "Indigo"
+          "label": "Indigo",
+          "color": "#608DE2"
         },
         {
           "id": "lemongrass",
-          "label": "Lemongrass"
+          "label": "Lemongrass",
+          "color": "#E1E3C7"
         }
       ]
     },
@@ -213,18 +411,48 @@
         0.06716,
         0.06716
       ],
+      "solid": "slab",
+      "body": {
+        "x": 0,
+        "y": 0,
+        "width": 0.99502,
+        "height": 1,
+        "corners": [
+          0.06908,
+          0.06908,
+          0.06908,
+          0.06908
+        ]
+      },
+      "buttons": [
+        {
+          "side": "right",
+          "from": 0.22506,
+          "to": 0.29234,
+          "out": 0.00498
+        },
+        {
+          "side": "right",
+          "from": 0.35499,
+          "to": 0.47332,
+          "out": 0.00498
+        }
+      ],
       "finishes": [
         {
           "id": "default",
-          "label": "Silver"
+          "label": "Silver",
+          "color": "#D0D0CB"
         },
         {
           "id": "black",
-          "label": "Black"
+          "label": "Black",
+          "color": "#434445"
         },
         {
           "id": "gold",
-          "label": "Gold"
+          "label": "Gold",
+          "color": "#FFD4AA"
         }
       ]
     },
@@ -247,34 +475,68 @@
         0.0929,
         0.0929
       ],
+      "solid": "slab",
+      "body": {
+        "x": 0,
+        "y": 0,
+        "width": 0.99355,
+        "height": 1,
+        "corners": [
+          0.12576,
+          0.12576,
+          0.12576,
+          0.12576
+        ]
+      },
+      "buttons": [
+        {
+          "side": "right",
+          "from": 0.1823,
+          "to": 0.31801,
+          "out": 0.00645
+        },
+        {
+          "side": "right",
+          "from": 0.38385,
+          "to": 0.45807,
+          "out": 0.00645
+        }
+      ],
       "finishes": [
         {
           "id": "blue-black",
-          "label": "Blue Black"
+          "label": "Blue Black",
+          "color": "#41454E"
         },
         {
           "id": "icy-blue",
-          "label": "Icy Blue"
+          "label": "Icy Blue",
+          "color": "#BFC6D6"
         },
         {
           "id": "navy",
-          "label": "Navy"
+          "label": "Navy",
+          "color": "#304164"
         },
         {
           "id": "mint",
-          "label": "Mint"
+          "label": "Mint",
+          "color": "#BFD1C5"
         },
         {
           "id": "silver-shadow",
-          "label": "Silver Shadow"
+          "label": "Silver Shadow",
+          "color": "#AAABAE"
         },
         {
           "id": "coral-red",
-          "label": "Coral Red"
+          "label": "Coral Red",
+          "color": "#EB6970"
         },
         {
           "id": "pink-gold",
-          "label": "Pink Gold"
+          "label": "Pink Gold",
+          "color": "#E9D8CF"
         }
       ]
     },
@@ -297,14 +559,49 @@
         0.0829,
         0.0829
       ],
+      "solid": "slab",
+      "body": {
+        "x": 0.00777,
+        "y": 0,
+        "width": 0.98446,
+        "height": 1,
+        "corners": [
+          0.14214,
+          0.14214,
+          0.14214,
+          0.14214
+        ]
+      },
+      "buttons": [
+        {
+          "side": "left",
+          "from": 0.17391,
+          "to": 0.31401,
+          "out": 0.00777
+        },
+        {
+          "side": "left",
+          "from": 0.37198,
+          "to": 0.4372,
+          "out": 0.00777
+        },
+        {
+          "side": "right",
+          "from": 0.31401,
+          "to": 0.37923,
+          "out": 0.00777
+        }
+      ],
       "finishes": [
         {
           "id": "default",
-          "label": "Black"
+          "label": "Black",
+          "color": "#9C9C9C"
         },
         {
           "id": "blue",
-          "label": "Blue"
+          "label": "Blue",
+          "color": "#5192D4"
         }
       ]
     },
@@ -327,14 +624,49 @@
         0.02579,
         0.02579
       ],
+      "solid": "slab",
+      "body": {
+        "x": 0,
+        "y": 0.00206,
+        "width": 0.99731,
+        "height": 0.99794,
+        "corners": [
+          0.06615,
+          0.06615,
+          0.06614,
+          0.06614
+        ]
+      },
+      "buttons": [
+        {
+          "side": "right",
+          "from": 0.07062,
+          "to": 0.10627,
+          "out": 0.00269
+        },
+        {
+          "side": "right",
+          "from": 0.11382,
+          "to": 0.14913,
+          "out": 0.00269
+        },
+        {
+          "side": "top",
+          "from": 0.8773,
+          "to": 0.93283,
+          "out": 0.00269
+        }
+      ],
       "finishes": [
         {
           "id": "silver",
-          "label": "Silver"
+          "label": "Silver",
+          "color": "#9E9FA0"
         },
         {
           "id": "space-black",
-          "label": "Space Black"
+          "label": "Space Black",
+          "color": "#4A484C"
         }
       ]
     },
@@ -357,14 +689,29 @@
         0.0016,
         0.0016
       ],
+      "solid": "slab",
+      "body": {
+        "x": 0,
+        "y": 0,
+        "width": 1,
+        "height": 1,
+        "corners": [
+          0.07028,
+          0.07028,
+          0.07028,
+          0.07028
+        ]
+      },
       "finishes": [
         {
           "id": "silver",
-          "label": "Silver"
+          "label": "Silver",
+          "color": "#FCFCFC"
         },
         {
           "id": "black",
-          "label": "Black"
+          "label": "Black",
+          "color": "#242324"
         }
       ]
     },
@@ -387,10 +734,38 @@
         0,
         0
       ],
+      "solid": "slab",
+      "body": {
+        "x": 0,
+        "y": 0.00505,
+        "width": 1,
+        "height": 0.99495,
+        "corners": [
+          0.01753,
+          0.01753,
+          0.01753,
+          0.01753
+        ]
+      },
+      "buttons": [
+        {
+          "side": "top",
+          "from": 0.08556,
+          "to": 0.13191,
+          "out": 0.00357
+        },
+        {
+          "side": "top",
+          "from": 0.16756,
+          "to": 0.25312,
+          "out": 0.00357
+        }
+      ],
       "finishes": [
         {
           "id": "default",
-          "label": "Silver"
+          "label": "Silver",
+          "color": "#C8C8C8"
         }
       ]
     },
@@ -413,14 +788,35 @@
         0,
         0
       ],
+      "solid": "laptop",
+      "body": {
+        "x": 0.03721,
+        "y": 0,
+        "width": 0.92581,
+        "height": 0.93664,
+        "corners": [
+          0.0279,
+          0.0279,
+          0,
+          0
+        ]
+      },
+      "base": {
+        "x": 0,
+        "y": 0.93664,
+        "width": 1,
+        "height": 0.06336
+      },
       "finishes": [
         {
           "id": "silver",
-          "label": "Silver"
+          "label": "Silver",
+          "color": "#CBCCCE"
         },
         {
           "id": "space-black",
-          "label": "Space Black"
+          "label": "Space Black",
+          "color": "#5B595C"
         }
       ]
     },
@@ -443,22 +839,45 @@
         0,
         0
       ],
+      "solid": "laptop",
+      "body": {
+        "x": 0.08514,
+        "y": 0,
+        "width": 0.82973,
+        "height": 0.96759,
+        "corners": [
+          0.02681,
+          0.02681,
+          0,
+          0
+        ]
+      },
+      "base": {
+        "x": 0,
+        "y": 0.96759,
+        "width": 1,
+        "height": 0.03241
+      },
       "finishes": [
         {
           "id": "default",
-          "label": "Silver"
+          "label": "Silver",
+          "color": "#9B9EA2"
         },
         {
           "id": "spacegray",
-          "label": "Space gray"
+          "label": "Space gray",
+          "color": "#4C4F51"
         },
         {
           "id": "gold",
-          "label": "Gold"
+          "label": "Gold",
+          "color": "#E7C5AC"
         },
         {
           "id": "rosegold",
-          "label": "Rose gold"
+          "label": "Rose gold",
+          "color": "#F09E92"
         }
       ]
     },
@@ -481,14 +900,35 @@
         0.00187,
         0.00187
       ],
+      "solid": "laptop",
+      "body": {
+        "x": 0.085,
+        "y": 0.07414,
+        "width": 0.83,
+        "height": 0.73276,
+        "corners": [
+          0.01229,
+          0.01229,
+          0,
+          0
+        ]
+      },
+      "base": {
+        "x": 0.05,
+        "y": 0.8069,
+        "width": 0.9,
+        "height": 0.06207
+      },
       "finishes": [
         {
           "id": "dark",
-          "label": "Graphite"
+          "label": "Graphite",
+          "color": "#3D434A"
         },
         {
           "id": "silver",
-          "label": "Silver"
+          "label": "Silver",
+          "color": "#CBD0D6"
         }
       ]
     },
@@ -511,10 +951,30 @@
         0,
         0
       ],
+      "solid": "laptop",
+      "body": {
+        "x": 0.0989,
+        "y": 0.00465,
+        "width": 0.8022,
+        "height": 0.95814,
+        "corners": [
+          0.01624,
+          0.01624,
+          0,
+          0
+        ]
+      },
+      "base": {
+        "x": 0,
+        "y": 0.96279,
+        "width": 1,
+        "height": 0.03721
+      },
       "finishes": [
         {
           "id": "default",
-          "label": "Silver"
+          "label": "Silver",
+          "color": "#DFDEDE"
         }
       ]
     },

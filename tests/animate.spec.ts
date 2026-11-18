@@ -215,7 +215,7 @@ test.describe("Animate: objects", () => {
     expect(await page.evaluate(`ST().findOne("#${arrow}").findOne(".draw-stroke").dashOffset()`)).toBe(0);
   });
 
-  test("a picture turns in 3D, and in a mockup it moves in 2D instead", async ({ page }) => {
+  test("a picture turns in 3D, and so does a mockup", async ({ page }) => {
     await openApp(page);
     await loadMotion(page);
     const id = await addTwoToneImage(page);
@@ -247,9 +247,16 @@ test.describe("Animate: objects", () => {
     })})`);
     await page.waitForFunction(`!!ST().findOne("#${id}").findOne(".mockup-frame")`);
     await pose(page, 1);
-    // Swing becomes a sway: the whole device rocks, flat.
-    expect(Math.abs((await nodeAttrs(page, id)).rotation)).toBeGreaterThan(0.1);
-    expect(await page.evaluate(`!!ST().findOne("#${id}").findOne(".posed-picture")`)).toBe(false);
+    // Swing turns the device itself, drawn turned in place of the flat mockup.
+    expect(Math.abs((await nodeAttrs(page, id)).rotation)).toBeLessThan(0.01);
+    const device = (await page.evaluate(`(() => {
+      const node = ST().findOne("#${id}");
+      return { posed: node.findOne(".posed-picture").visible(), flat: node.findOne(".mockup-flat").visible() };
+    })()`)) as { posed: boolean; flat: boolean };
+    expect(device).toEqual({ posed: true, flat: false });
+
+    await page.evaluate(`POSE.restStage(ST(), S.getState(), { scale: 1, frame: 0, preview: true })`);
+    expect(await page.evaluate(`ST().findOne("#${id}").findOne(".mockup-flat").visible()`)).toBe(true);
   });
 
   test("each object is offered only the moves it can make", async ({ page }) => {

@@ -2,7 +2,8 @@ import { useEditor } from "@/store/editor";
 import type { ImageElement } from "@/types";
 import { cn } from "@/lib/utils";
 import { parseImageTilt, serializeImageTilt, type ImageTilt } from "@/lib/tilt";
-import { LabeledSlider, PanelHelp, SwitchRow } from "./primitives";
+import { hasBody } from "@/lib/mockups";
+import { LabeledSlider, SwitchRow } from "./primitives";
 import { choiceClass } from "./choice";
 
 const PRESETS = [
@@ -20,13 +21,14 @@ const PRESETS = [
   { name: "Hard Right", x: 45, y: 20, z: 15 },
 ];
 
-/** 3D tilt for an image: presets first, then the angles themselves. */
+/**
+ * 3D tilt for an image: presets first, then the angles themselves. A mockup turns too:
+ * a phone, tablet or laptop as a solid, anything else as a flat card.
+ */
 export const TiltControls = ({ image }: { image: ImageElement }) => {
   const update = useEditor((s) => s.updateElement);
-
-  if (image.deviceFrame) {
-    return <PanelHelp>A mockup stays flat. Choose None in Mockup to tilt the picture.</PanelHelp>;
-  }
+  // A solid device is lit, which shades its far side already.
+  const solid = !!image.deviceFrame && hasBody(image.deviceFrame);
 
   const tilt = parseImageTilt(image.transform || "");
   const set = (patch: Partial<ImageTilt>) =>
@@ -70,7 +72,9 @@ export const TiltControls = ({ image }: { image: ImageElement }) => {
         value={tilt.perspective}
         onChange={(v) => set({ perspective: v })}
       />
-      <SwitchRow label="INNER SHADE" checked={tilt.innerShadow} onCheckedChange={(v) => set({ innerShadow: v })} />
+      {!solid && (
+        <SwitchRow label="INNER SHADE" checked={tilt.innerShadow} onCheckedChange={(v) => set({ innerShadow: v })} />
+      )}
     </div>
   );
 };

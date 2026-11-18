@@ -133,7 +133,8 @@ export const poseStage = async (stage: Konva.Stage, scene: MotionScene, t: numbe
   scene.elements.forEach((el, index) => {
     const nodes = nodesOf(stage, el.id);
     if (!nodes.length) return;
-    const canTilt = el.type === "image" && !el.deviceFrame;
+    // A picture turns in 3D, and so does a mockup: a phone, tablet or laptop as a solid.
+    const canTilt = el.type === "image";
     const pose = objectPoseAt(el, motion, t, { unit, index, canTilt });
     if (!pose) return;
     moving.add(el.id);
