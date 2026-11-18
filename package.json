@@ -17,7 +17,7 @@
     "icons:sync": "node scripts/sync-icons.mjs",
     "fonts:sync": "node scripts/sync-google-fonts.mjs",
     "devices:sync": "node scripts/sync-device-frames.mjs",
-    "publish:public": "node scripts/publish-public.mjs",
+    "push:public": "node scripts/publish-public.mjs",
     "test": "playwright test"
   },
   "dependencies": {
